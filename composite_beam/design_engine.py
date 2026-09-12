@@ -1,11 +1,17 @@
-"""Design engine: orchestrate P0 composite beam checks and section search."""
+"""Design engine: orchestrate composite beam checks and section search."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Optional
 
-from composite_beam.analysis.simple_beam import analyze_simply_supported
+from composite_beam.analysis.continuous import (
+    SupportType,
+    analyze_span,
+    cb_from_segment,
+    midspan_deflection_from_moment_mm,
+)
+from composite_beam.analysis.simple_beam import BeamDiagram
 from composite_beam.combinations.asce7 import (
     ASCEEdition,
     Combination,
@@ -18,11 +24,13 @@ from composite_beam.composite.effective_width import (
     EffectiveWidthResult,
     effective_width,
 )
+from composite_beam.composite.punching import PunchingResult, punching_with_group
 from composite_beam.composite.shear_connection import ShearConnectionResult, shear_connection
 from composite_beam.composite.slab import DeckOrientation, SlabConfig
+from composite_beam.composite.stud_layout import StudLayoutResult, StudZone, layout_studs
 from composite_beam.composite.studs import StudConfig, StudQnResult, stud_Qn
-from composite_beam.loads.load_cases import LoadCase, LoadSet, PointLoad, PointLoadSpec, UDL
-from composite_beam.materials.concrete import ConcreteMaterial, EcCode, modular_ratio
+from composite_beam.loads.load_cases import PointLoad
+from composite_beam.materials.concrete import ConcreteMaterial, modular_ratio
 from composite_beam.materials.steel import SteelMaterial
 from composite_beam.sections.classification import ClassificationResult, classify_flexure
 from composite_beam.sections.w_shapes import WShape, WShapeDatabase
@@ -31,14 +39,20 @@ from composite_beam.serviceability.deflection import (
     DeflectionResult,
     compute_deflections,
 )
+from composite_beam.strength.interaction import (
+    InteractionResult,
+    chapter_h_interaction,
+    compressive_strength_E3,
+)
 from composite_beam.strength.ltb import LTBResult, construction_LTB
+from composite_beam.strength.negative_moment import NegativeMomentResult, negative_flexural_strength
 from composite_beam.strength.positive_moment import PositiveMomentResult, positive_flexural_strength
 from composite_beam.units import ES_MPA
 
 
 @dataclass
 class DesignInputs:
-    """All inputs for a simply-supported composite beam design."""
+    """All inputs for a composite beam design (simply supported or continuous)."""
 
     L_mm: float
     shape: WShape
@@ -74,6 +88,16 @@ class DesignInputs:
     Omega_b: float = 1.67
     custom_combinations: list[Combination] = field(default_factory=list)
     n_studs_per_rib: int = 1
+    # --- P1 ---
+    support: SupportType = SupportType.SIMPLY_SUPPORTED
+    M_left_override_kNm: Optional[float] = None
+    M_right_override_kNm: Optional[float] = None
+    Pu_kN: float = 0.0
+    K_factor: float = 1.0
+    Lb_neg_mm: Optional[float] = None
+    include_residual_concrete_tension: bool = False
+    stud_zones: Optional[list[StudZone]] = None
+    phi_c: float = 0.90
 
 
 @dataclass
@@ -111,27 +135,55 @@ class DesignResult:
     overall_pass: bool
     detailed_notes: list[str]
     passing_shapes: list[PassingShape] = field(default_factory=list)
+    diagram: Optional[BeamDiagram] = None
+    negative_moment: Optional[NegativeMomentResult] = None
+    Mu_neg_kNm: float = 0.0
+    DCR_neg: float = 0.0
+    pass_neg: bool = True
+    interaction: Optional[InteractionResult] = None
+    pass_interaction: bool = True
+    stud_layout: Optional[StudLayoutResult] = None
+    punching: Optional[PunchingResult] = None
+    pass_punching: bool = True
 
 
 def _slab_self_weight_kNpm(slab: SlabConfig, trib_mm: float, density_kNm3: float) -> float:
     """Uniform load from slab self-weight on trib width."""
     t_m = (slab.t_solid_mm + 0.5 * slab.hr_mm) / 1000.0  # approx average thickness
-    # For solid: t_solid; for deck: solid + half rib fill approx
     if slab.orientation == DeckOrientation.NONE:
         t_m = slab.t_solid_mm / 1000.0
     trib_m = trib_mm / 1000.0
     return density_kNm3 * t_m * trib_m
 
 
-def _factored_moment(
-    L_mm: float,
+def _phi(inp: DesignInputs) -> float:
+    return inp.phi_b if inp.method.upper() == "LRFD" else 1.0 / inp.Omega_b
+
+
+def _analyze(
+    inp: DesignInputs,
+    w_kNpm: float,
+    points: list[PointLoad],
+) -> BeamDiagram:
+    return analyze_span(
+        inp.L_mm,
+        w_kNpm,
+        points,
+        support=inp.support,
+        M_left_override_kNm=inp.M_left_override_kNm,
+        M_right_override_kNm=inp.M_right_override_kNm,
+    )
+
+
+def _factored_analysis(
+    inp: DesignInputs,
     w_D_kNpm: float,
     w_L_kNpm: float,
     w_C_kNpm: float,
     points_L: list[PointLoad],
     combo: Combination,
-) -> tuple[float, float]:
-    """Apply combination factors to D, L, C roles; return Mu_kNm, Vu_kN."""
+) -> BeamDiagram:
+    """Apply combination factors to D, L, C roles; return the span diagram."""
     w = (
         combo.factor("D") * w_D_kNpm
         + combo.factor("L") * w_L_kNpm
@@ -144,12 +196,11 @@ def _factored_moment(
             pts.append(
                 PointLoad(P_kN=p.P_kN * fL, location=p.location, spec=p.spec, label=p.label)
             )
-    diag = analyze_simply_supported(L_mm, w, pts)
-    return diag.M_max_kNm, diag.V_max_kN
+    return _analyze(inp, w, pts)
 
 
 class DesignEngine:
-    """Run P0 composite beam design for a selected section and optional search."""
+    """Run composite beam design for a selected section and optional search."""
 
     def __init__(self, db: Optional[WShapeDatabase] = None) -> None:
         self.db = db or WShapeDatabase()
@@ -158,8 +209,17 @@ class DesignEngine:
         notes: list[str] = []
         flags = edition_flags(inp.asce_edition)
         flags.append(f"Locked AISC edition: {inp.aisc_edition.value}")
+        flags.append(
+            "FLAG AISC 360-16 vs 360-22: I2.1a beff, I3.2a/b flexure, I8 studs, "
+            "F2–F7, E3, and H1 equations used here are numerically the same; "
+            "360-22 cleaned up I2.1a edge-beam wording and Chapter I user notes."
+        )
+        if inp.support != SupportType.SIMPLY_SUPPORTED:
+            flags.append(
+                f"Support: {inp.support.value} (elastic FEM end moments; "
+                "overrides applied if provided). Cantilevers are out of scope."
+            )
 
-        # Effective width
         beff_res = effective_width(
             inp.L_mm,
             inp.spacing_left_mm,
@@ -188,13 +248,73 @@ class DesignEngine:
             inp.stud, slab, inp.shape.tf_mm, inp.concrete.Ec_MPa, inp.n_studs_per_rib
         )
 
+        # Dead load assembly (needed for analysis before shear if we want Mmax location)
+        trib = inp.slab_trib_width_mm or beff_res.beff_mm
+        w_slab = (
+            _slab_self_weight_kNpm(slab, trib, inp.concrete.density_kNm3)
+            if inp.include_slab_self_weight
+            else 0.0
+        )
+        w_beam = inp.shape.W_kNm if inp.include_beam_self_weight else 0.0
+        w_D_wet = w_slab + w_beam
+        w_D_service_super = inp.w_SDL_kNpm
+        w_D_total = w_D_wet + w_D_service_super
+        w_L = inp.w_LL_kNpm
+        w_C = inp.w_construction_kNpm
+        phi = _phi(inp)
+
+        # Occupancy envelopes
+        cset = CombinationSet(
+            edition=inp.asce_edition,
+            method=inp.method,
+            include_construction=False,
+            custom=inp.custom_combinations[:5],
+        )
+        Mu = 0.0
+        Mu_neg = 0.0
+        Vu = 0.0
+        gov_diag: Optional[BeamDiagram] = None
+        combo_notes = []
+        for combo in cset.all():
+            if combo.factor("C") and not (combo.factor("L") or combo.factor("D")):
+                continue
+            diag = _factored_analysis(inp, w_D_total, w_L, 0.0, inp.points_LL, combo)
+            combo_notes.append(
+                f"{combo.name}: Mu+={diag.M_max_kNm:.2f} kN·m, "
+                f"Mu−={diag.M_min_kNm:.2f} kN·m, Vu={diag.V_max_kN:.2f} kN"
+            )
+            if diag.M_max_kNm > Mu:
+                Mu, Vu = diag.M_max_kNm, diag.V_max_kN
+                gov_diag = diag
+            if diag.M_min_kNm < Mu_neg:
+                Mu_neg = diag.M_min_kNm
+                if gov_diag is None:
+                    gov_diag = diag
+
+        # Four-zone studs (optional). When provided, they set n each side of max M.
+        stud_layout: Optional[StudLayoutResult] = None
+        n_half = inp.n_studs_half_span
+        if inp.stud_zones is not None:
+            x_mmax = gov_diag.M_max_x_mm if gov_diag is not None else inp.L_mm / 2.0
+            hog_x = list(gov_diag.x_mm) if gov_diag is not None else None
+            hog_m = list(gov_diag.M_kNmm < -1e-6) if gov_diag is not None else None
+            stud_layout = layout_studs(
+                inp.L_mm,
+                inp.stud_zones,
+                x_Mmax_mm=x_mmax,
+                hogging_mask_x_mm=hog_x,
+                hogging_mask=hog_m,
+            )
+            n_half = stud_layout.n_left_of_max_M
+            notes.extend(stud_layout.notes)
+
         shear = shear_connection(
             inp.shape,
             inp.steel.Fy_MPa,
             slab,
             stud_qn,
-            n_studs_half_span=inp.n_studs_half_span,
-            target_ratio=inp.target_composite_ratio,
+            n_studs_half_span=n_half,
+            target_ratio=inp.target_composite_ratio if inp.stud_zones is None else None,
         )
 
         pos = positive_flexural_strength(
@@ -204,72 +324,151 @@ class DesignEngine:
             shear,
             classification,
             n,
-            phi_b=inp.phi_b if inp.method.upper() == "LRFD" else 1.0 / inp.Omega_b,
+            phi_b=phi,
         )
-
-        # Dead load assembly
-        trib = inp.slab_trib_width_mm or beff_res.beff_mm
-        w_slab = (
-            _slab_self_weight_kNpm(slab, trib, inp.concrete.density_kNm3)
-            if inp.include_slab_self_weight
-            else 0.0
-        )
-        w_beam = inp.shape.W_kNm if inp.include_beam_self_weight else 0.0
-        w_D_wet = w_slab + w_beam  # construction dead (wet concrete + beam)
-        w_D_service_super = inp.w_SDL_kNpm  # superimposed after composite
-        w_D_total = w_D_wet + w_D_service_super
-        w_L = inp.w_LL_kNpm
-        w_C = inp.w_construction_kNpm
-
-        # Governing occupancy combo (exclude construction-only)
-        cset = CombinationSet(
-            edition=inp.asce_edition,
-            method=inp.method,
-            include_construction=False,
-            custom=inp.custom_combinations[:5],
-        )
-        Mu = 0.0
-        Vu = 0.0
-        combo_notes = []
-        for combo in cset.all():
-            if combo.factor("C") and not (combo.factor("L") or combo.factor("D")):
-                continue
-            m, v = _factored_moment(
-                inp.L_mm, w_D_total, w_L, 0.0, inp.points_LL, combo
-            )
-            combo_notes.append(f"{combo.name}: Mu={m:.2f} kN·m, Vu={v:.2f} kN")
-            if m > Mu:
-                Mu, Vu = m, v
-
-        # ASD uses allowable stress design factor already in pos.phi as 1/Ω
         DCR_flex = Mu / pos.phiMn_kNm if pos.phiMn_kNm > 0 else float("inf")
 
-        # Construction LTB
+        # Construction LTB (steel alone)
         Lb = inp.Lb_construction_mm if inp.Lb_construction_mm is not None else inp.L_mm
         constr_combos = CombinationSet(
             edition=inp.asce_edition, method=inp.method, include_construction=True
         ).all()
         Mu_c = 0.0
+        Mu_c_neg = 0.0
+        constr_diag: Optional[BeamDiagram] = None
         for combo in constr_combos:
             if combo.factor("C") == 0 and "wet" not in combo.name.lower() and "C" not in combo.name:
-                # only construction-tagged
                 if "1.2Dwet" not in combo.name and "Dwet" not in combo.name:
                     continue
-            m, _ = _factored_moment(inp.L_mm, w_D_wet, 0.0, w_C, [], combo)
+            dgc = _factored_analysis(inp, w_D_wet, 0.0, w_C, [], combo)
             if ("wet" in combo.name.lower()) or combo.factor("C") > 0:
-                Mu_c = max(Mu_c, m)
-                combo_notes.append(f"CONSTRUCTION {combo.name}: Mu={m:.2f} kN·m")
+                if dgc.M_max_kNm > Mu_c:
+                    Mu_c = dgc.M_max_kNm
+                    constr_diag = dgc
+                if dgc.M_min_kNm < Mu_c_neg:
+                    Mu_c_neg = dgc.M_min_kNm
+                combo_notes.append(
+                    f"CONSTRUCTION {combo.name}: Mu+={dgc.M_max_kNm:.2f}; Mu−={dgc.M_min_kNm:.2f} kN·m"
+                )
 
-        ltb = construction_LTB(
+        Cb_c = 1.14 if inp.support == SupportType.SIMPLY_SUPPORTED else 1.0
+        if constr_diag is not None and inp.support != SupportType.SIMPLY_SUPPORTED:
+            Cb_c = cb_from_segment(constr_diag.x_mm, constr_diag.M_kNmm, 0.0, inp.L_mm)
+
+        ltb_sag = construction_LTB(
             inp.shape,
             inp.steel.Fy_MPa,
             Lb,
             Mu_c,
-            Cb=1.14,  # approximate for uniform load simply supported
+            Cb=Cb_c,
             braced_by_deck=inp.deck_braces_construction,
-            phi_b=inp.phi_b if inp.method.upper() == "LRFD" else 1.0 / inp.Omega_b,
+            phi_b=phi,
             E_MPa=inp.steel.Es_MPa,
         )
+        ltb = ltb_sag
+        if abs(Mu_c_neg) > 1.0:
+            # Hogging construction: bottom flange in compression — deck does not brace it
+            ltb_hog_c = construction_LTB(
+                inp.shape,
+                inp.steel.Fy_MPa,
+                inp.Lb_neg_mm if inp.Lb_neg_mm is not None else Lb,
+                abs(Mu_c_neg),
+                Cb=1.0,
+                braced_by_deck=False,
+                phi_b=phi,
+                E_MPa=inp.steel.Es_MPa,
+            )
+            notes.append(
+                "Construction hogging: bottom-flange LTB, deck brace does NOT apply."
+            )
+            if ltb_hog_c.DCR > ltb.DCR:
+                ltb = ltb_hog_c
+                notes.append("Governing construction LTB is hogging (bottom flange).")
+
+        # Negative moment (occupancy hogging)
+        neg: Optional[NegativeMomentResult] = None
+        pass_neg = True
+        DCR_neg = 0.0
+        if abs(Mu_neg) > 1e-3:
+            T_res = 0.0
+            lever = slab.total_depth_mm / 2.0 + inp.shape.d_mm / 2.0
+            if inp.include_residual_concrete_tension:
+                n_hog = stud_layout.n_hogging if stud_layout is not None else 0
+                AsFy = inp.shape.A_mm2 * inp.steel.Fy_MPa / 1000.0
+                T_fc = 0.10 * (slab.fc_MPa ** 0.5) * slab.beff_mm * slab.t_solid_mm / 1000.0
+                T_res = min(n_hog * stud_qn.Qn_kN, 0.10 * AsFy, T_fc)
+                notes.append(
+                    f"Residual T = min(n_hog Qn, 0.10 AsFy, 0.10√f'c Ac) = {T_res:.1f} kN "
+                    f"(n_hog={n_hog}). NOT I3 hogging PNA."
+                )
+            Cb_neg = 1.0
+            if gov_diag is not None:
+                Cb_neg = cb_from_segment(gov_diag.x_mm, gov_diag.M_kNmm, 0.0, inp.L_mm * 0.25)
+            Lb_neg = inp.Lb_neg_mm if inp.Lb_neg_mm is not None else inp.L_mm
+            neg = negative_flexural_strength(
+                inp.shape,
+                inp.steel.Fy_MPa,
+                classification,
+                Mu_neg,
+                Lb_neg,
+                Cb=Cb_neg,
+                phi_b=phi,
+                E_MPa=inp.steel.Es_MPa,
+                include_residual_concrete=inp.include_residual_concrete_tension,
+                residual_T_kN=T_res,
+                residual_lever_mm=lever,
+            )
+            pass_neg = neg.passes
+            DCR_neg = neg.DCR
+
+        # Chapter H (only required when axial is present)
+        inter: Optional[InteractionResult] = None
+        pass_inter = True
+        if abs(inp.Pu_kN) > 0.01:
+            Pn, Pc, Fcr, slend, e_notes = compressive_strength_E3(
+                inp.shape,
+                inp.steel.Fy_MPa,
+                inp.L_mm,
+                K=inp.K_factor,
+                phi_c=inp.phi_c if inp.method.upper() == "LRFD" else 1.0 / 1.67,
+                E_MPa=inp.steel.Es_MPa,
+            )
+            Mcx = pos.phiMn_kNm
+            if neg is not None:
+                # Use the smaller available flexural strength about x
+                Mcx = min(Mcx, neg.phiMn_kNm)
+            Mrx = max(abs(Mu), abs(Mu_neg))
+            inter = chapter_h_interaction(
+                Pr_kN=inp.Pu_kN,
+                Pc_kN=Pc,
+                Mrx_kNm=Mrx,
+                Mcx_kNm=Mcx,
+                Mry_kNm=0.0,
+                Mcy_kNm=1.0,
+                Pn_kN=Pn,
+                KL_r=slend,
+                Fcr_MPa=Fcr,
+                extra_notes=e_notes,
+            )
+            pass_inter = inter.passes
+
+        # Punching
+        min_s = 1.0e9
+        n_rows = 1
+        if inp.stud_zones:
+            min_s = min(z.spacing_mm for z in inp.stud_zones if z.spacing_mm > 0)
+            n_rows = max(z.n_rows for z in inp.stud_zones)
+        elif shear.n_studs_provided > 0:
+            min_s = inp.L_mm / max(2 * shear.n_studs_provided, 1)
+        punch = punching_with_group(
+            inp.stud.diameter_mm,
+            slab.t_solid_mm,
+            slab.fc_MPa,
+            stud_qn.Qn_kN,
+            min_spacing_mm=min_s,
+            n_rows=n_rows,
+        )
+        pass_punch = punch.passes
 
         # Deflections
         delf = compute_deflections(
@@ -288,11 +487,41 @@ class DesignEngine:
             camber_mm=inp.camber_mm,
             E_MPa=inp.steel.Es_MPa,
         )
+        if inp.support != SupportType.SIMPLY_SUPPORTED:
+            EI_s = inp.steel.Es_MPa * inp.shape.Ix_mm4 / 1000.0
+            EI_eff = inp.steel.Es_MPa * delf.I_eff_mm4 / 1000.0
+            dLL = _analyze(inp, w_L, inp.points_LL)
+            delta_LL = midspan_deflection_from_moment_mm(dLL.x_mm, dLL.M_kNmm, EI_eff)
+            dDLc = _analyze(inp, w_D_wet, inp.points_DL)
+            dDLs = _analyze(inp, w_D_service_super, [])
+            if inp.shored:
+                dDLall = _analyze(inp, w_D_wet + w_D_service_super, inp.points_DL)
+                delta_DL = midspan_deflection_from_moment_mm(dDLall.x_mm, dDLall.M_kNmm, EI_eff)
+                delta_DLc = 0.0
+            else:
+                delta_DLc = midspan_deflection_from_moment_mm(dDLc.x_mm, dDLc.M_kNmm, EI_s)
+                delta_DLs = midspan_deflection_from_moment_mm(dDLs.x_mm, dDLs.M_kNmm, EI_eff)
+                delta_DL = delta_DLc + delta_DLs
+            delta_tot = delta_DL + delta_LL
+            delf.delta_LL_mm = delta_LL
+            delf.delta_DL_construction_mm = delta_DLc
+            delf.delta_DL_composite_mm = delta_DL - delta_DLc
+            delf.delta_total_mm = delta_tot
+            delf.LL_OK = delta_LL <= delf.delta_LL_limit_mm + 1e-6
+            delf.total_OK = delta_tot <= delf.delta_total_limit_mm + 1e-6
+            delf.notes.append(
+                f"Continuous-span deflections from M/EI integration "
+                f"({inp.support.value}); SS 5/384 not used."
+            )
 
         pass_flex = DCR_flex <= 1.0
         pass_c = ltb.passes
         pass_d = delf.LL_OK and delf.total_OK
-        overall = pass_flex and pass_c and pass_d
+        overall = pass_flex and pass_c and pass_d and pass_neg
+        if abs(inp.Pu_kN) > 0.01:
+            overall = overall and pass_inter
+        # Punching is reported and included in overall (slab check)
+        overall = overall and pass_punch
 
         detailed = []
         detailed.extend(flags)
@@ -303,6 +532,12 @@ class DesignEngine:
         detailed.extend(ltb.notes)
         detailed.extend(delf.notes)
         detailed.extend(combo_notes)
+        detailed.extend(notes)
+        if neg is not None:
+            detailed.extend(neg.notes)
+        if inter is not None:
+            detailed.extend(inter.notes)
+        detailed.extend(punch.notes)
 
         passing: list[PassingShape] = []
         if search_passing:
@@ -316,6 +551,8 @@ class DesignEngine:
                 "fc_MPa": inp.concrete.fc_MPa,
                 "method": inp.method,
                 "location": inp.location.value,
+                "support": inp.support.value,
+                "section_kind": getattr(inp.shape, "section_kind", "W"),
             },
             beff=beff_res,
             n=n,
@@ -337,6 +574,16 @@ class DesignEngine:
             overall_pass=overall,
             detailed_notes=detailed,
             passing_shapes=passing,
+            diagram=gov_diag,
+            negative_moment=neg,
+            Mu_neg_kNm=Mu_neg,
+            DCR_neg=DCR_neg,
+            pass_neg=pass_neg,
+            interaction=inter,
+            pass_interaction=pass_inter,
+            stud_layout=stud_layout,
+            punching=punch,
+            pass_punching=pass_punch,
         )
 
     def _search_passing(
@@ -344,45 +591,22 @@ class DesignEngine:
     ) -> list[PassingShape]:
         """Return up to max_shapes passing W shapes lightest → heaviest."""
         out: list[PassingShape] = []
+        if getattr(base.shape, "section_kind", "W") == "BOX":
+            return out
         for shape in self.db.lightest_first():
-            if shape.designation == base.shape.designation and len(out) == 0:
-                pass  # still evaluate
-            trial = DesignInputs(
-                L_mm=base.L_mm,
-                shape=shape,
-                steel=base.steel,
-                concrete=base.concrete,
-                slab=base.slab,
-                location=base.location,
-                spacing_left_mm=base.spacing_left_mm,
-                spacing_right_mm=base.spacing_right_mm,
-                beff_override_mm=base.beff_override_mm,
-                aisc_edition=base.aisc_edition,
-                asce_edition=base.asce_edition,
-                stud=base.stud,
-                n_studs_half_span=base.n_studs_half_span,
-                target_composite_ratio=base.target_composite_ratio,
-                n_override=base.n_override,
-                w_SDL_kNpm=base.w_SDL_kNpm,
-                w_LL_kNpm=base.w_LL_kNpm,
-                w_construction_kNpm=base.w_construction_kNpm,
-                points_LL=base.points_LL,
-                shored=base.shored,
-                deck_braces_construction=base.deck_braces_construction,
-                Lb_construction_mm=base.Lb_construction_mm,
-                method=base.method,
-                n_studs_per_rib=base.n_studs_per_rib,
-            )
-            # Fix steel: keep Fy from base for catalog grades with thickness rules
+            trial = replace(base, shape=shape)
             if base.steel.grade == "custom":
-                trial.steel = base.steel
+                trial = replace(trial, steel=base.steel)
             else:
                 sm = SteelMaterial.from_grade(base.steel.grade, tf_mm=shape.tf_mm)
-                trial.steel = SteelMaterial(
-                    Fy_MPa=sm.Fy_MPa,
-                    Fu_MPa=sm.Fu_MPa,
-                    Es_MPa=base.steel.Es_MPa,
-                    grade=base.steel.grade,
+                trial = replace(
+                    trial,
+                    steel=SteelMaterial(
+                        Fy_MPa=sm.Fy_MPa,
+                        Fu_MPa=sm.Fu_MPa,
+                        Es_MPa=base.steel.Es_MPa,
+                        grade=base.steel.grade,
+                    ),
                 )
             res = self.design(trial, search_passing=False)
             if res.pass_flexure and res.pass_construction and res.pass_deflection:
