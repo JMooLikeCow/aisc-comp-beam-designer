@@ -1,0 +1,26 @@
+{
+  "A992": {
+    "name": "ASTM A992",
+    "Fy_default_ksi": 50.0,
+    "Fu_default_ksi": 65.0,
+    "notes": "W-shapes; Fy = 50 ksi, Fu = 65 ksi typically",
+    "flange_thickness_rules": []
+  },
+  "A572-50": {
+    "name": "ASTM A572 Grade 50",
+    "Fy_default_ksi": 50.0,
+    "Fu_default_ksi": 65.0,
+    "notes": "High-strength low-alloy; Fy = 50 ksi",
+    "flange_thickness_rules": []
+  },
+  "A36": {
+    "name": "ASTM A36",
+    "Fy_default_ksi": 36.0,
+    "Fu_default_ksi": 58.0,
+    "notes": "Carbon steel; for plates thicker than 8 in, Fy may be 32 ksi",
+    "flange_thickness_rules": [
+      {"tf_max_in": 8.0, "Fy_ksi": 36.0, "Fu_ksi": 58.0},
+      {"tf_max_in": null, "Fy_ksi": 32.0, "Fu_ksi": 58.0}
+    ]
+  }
+}

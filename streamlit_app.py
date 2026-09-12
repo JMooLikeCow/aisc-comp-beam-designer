@@ -1,6 +1,8 @@
-import streamlit as st
+"""Entry point: `streamlit run streamlit_app.py`."""
 
-st.title("🎈 My new app")
-st.write(
-    "Let's start building! For help and inspiration, head over to [docs.streamlit.io](https://docs.streamlit.io/)."
-)
+from __future__ import annotations
+
+import runpy
+from pathlib import Path
+
+runpy.run_path(str(Path(__file__).parent / "app" / "streamlit_app.py"), run_name="__main__")

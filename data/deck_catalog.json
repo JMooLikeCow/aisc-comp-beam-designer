@@ -1,0 +1,42 @@
+{
+  "solid": {
+    "name": "Solid slab (no deck)",
+    "hr_in": 0.0,
+    "wr_in": 0.0,
+    "orientation": "none",
+    "weight_psf": 0.0,
+    "notes": "Full solid concrete slab on steel beam"
+  },
+  "2VLI22": {
+    "name": "2 in VLI 22 ga",
+    "hr_in": 2.0,
+    "wr_in": 6.0,
+    "orientation": "perpendicular",
+    "weight_psf": 2.0,
+    "notes": "Typical 2\" composite deck; ribs perpendicular to beam"
+  },
+  "2VLI20": {
+    "name": "2 in VLI 20 ga",
+    "hr_in": 2.0,
+    "wr_in": 6.0,
+    "orientation": "perpendicular",
+    "weight_psf": 2.5,
+    "notes": "Heavier 2\" deck"
+  },
+  "3VLI22": {
+    "name": "3 in VLI 22 ga",
+    "hr_in": 3.0,
+    "wr_in": 12.0,
+    "orientation": "perpendicular",
+    "weight_psf": 2.8,
+    "notes": "3\" composite deck"
+  },
+  "1.5B22": {
+    "name": "1.5 in B deck 22 ga",
+    "hr_in": 1.5,
+    "wr_in": 6.0,
+    "orientation": "parallel",
+    "weight_psf": 1.8,
+    "notes": "Form deck; ribs often parallel to beam"
+  }
+}
