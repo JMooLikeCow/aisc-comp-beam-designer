@@ -52,10 +52,24 @@ def classify_flexure(shape: "WShape", Fy_MPa: float, E_MPa: float = 200_000.0) -
     Plastic Mn (I3.2a) requires compact; otherwise use elastic I3.2b.
     """
     root = (E_MPa / Fy_MPa) ** 0.5
-    lambda_pf = 0.38 * root
-    lambda_rf = 1.0 * root
-    lambda_pw = 3.76 * root
-    lambda_rw = 5.70 * root
+    kind = getattr(shape, "section_kind", "W")
+    if kind == "BOX":
+        # Table B4.1b case 12 (flanges of rectangular HSS and boxes of uniform thickness)
+        # and case 19 (webs of rectangular HSS and boxes).
+        lambda_pf = 1.12 * root
+        lambda_rf = 1.40 * root
+        lambda_pw = 2.42 * root
+        lambda_rw = 5.70 * root
+        case_note = (
+            "AISC 360-22 Table B4.1b cases 12 (box flange b/t) and 19 (box web h/t). "
+            "360-16 Table B4.1b uses the same numerical λp/λr for these cases."
+        )
+    else:
+        lambda_pf = 0.38 * root
+        lambda_rf = 1.0 * root
+        lambda_pw = 3.76 * root
+        lambda_rw = 5.70 * root
+        case_note = "AISC 360-22 Table B4.1b cases 10 (flange) and 15 (web) for flexure."
 
     lambda_f = shape.bf_2tf
     lambda_w = shape.h_c_tw
@@ -71,7 +85,7 @@ def classify_flexure(shape: "WShape", Fy_MPa: float, E_MPa: float = 200_000.0) -
     web = _cls(lambda_w, lambda_pw, lambda_rw)
 
     notes = [
-        "AISC 360-22 Table B4.1b cases 10 (flange) and 15 (web) for flexure.",
+        case_note,
         f"λf={lambda_f:.3f} vs λpf={lambda_pf:.3f}, λrf={lambda_rf:.3f} → {flange.value}",
         f"λw={lambda_w:.3f} vs λpw={lambda_pw:.3f}, λrw={lambda_rw:.3f} → {web.value}",
         "h/tw approximated as (d−2tf)/tw (slightly conservative vs filleted clear distance).",

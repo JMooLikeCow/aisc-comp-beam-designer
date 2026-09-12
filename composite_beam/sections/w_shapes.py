@@ -40,6 +40,7 @@ class WShape:
     rts_mm: float
     ho_mm: float
     custom: bool = False
+    section_kind: str = "W"  # "W" rolled/plate-girder I; "BOX" welded box
     # imperial originals
     W_lb_ft: float = 0.0
     A_in2: float = 0.0
@@ -69,7 +70,14 @@ class WShape:
 
     @property
     def bf_2tf(self) -> float:
-        """Flange slenderness λ_f = bf/(2 tf) — AISC Table B4.1b."""
+        """Flange slenderness λ_f.
+
+        I-shape (Table B4.1b case 10): bf/(2 tf)
+        Box (case 12): clear flange width / tf = (B − 2 tw)/tf
+        """
+        if self.section_kind == "BOX":
+            b_clear = self.bf_mm - 2.0 * self.tw_mm
+            return b_clear / self.tf_mm if self.tf_mm > 0 else 0.0
         return self.bf_mm / (2.0 * self.tf_mm)
 
 
