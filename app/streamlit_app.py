@@ -24,8 +24,8 @@ from composite_beam.sections.w_shapes import WShapeDatabase, custom_w_shape
 from composite_beam.serviceability.deflection import DeflectionLimits
 from composite_beam.units import format_dual, in_to_mm, knm_to_kipft, ksi_to_mpa, mm_to_in
 
-st.set_page_config(page_title="Composite Beam Design", layout="wide", page_icon="🏗️")
-st.title("AISC Steel–Concrete Composite Beam Design")
+st.set_page_config(page_title="AISC Comp Beam Designer", layout="wide", page_icon="🏗️")
+st.title("AISC Comp Beam Designer")
 st.caption("Primary SI (kN, mm, MPa); US customary in brackets. AISC 360-22 / ASCE 7.")
 
 

@@ -1,10 +1,10 @@
-# AISC Steel–Concrete Composite Beam Design Tool
+# AISC Comp Beam Designer
 
 Production-oriented **Python + Streamlit** toolkit for **AISC 360** steel–concrete composite beam design (simply supported happy path), with **ASCE 7** gravity combinations.
 
 Primary units: **SI (kN, mm, kPa, MPa)** with **US customary in brackets** in the UI and reports.
 
-[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://blank-app-template.streamlit.app/)
+[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://github.com/JMooLikeCow/aisc-comp-beam-designer)
 
 ## Setup
 
