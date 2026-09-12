@@ -138,15 +138,21 @@ with tab_in:
 
     st.subheader("Steel section")
     sec_mode = st.radio("Section type", ["W-shape catalog", "Custom I-section", "Custom welded box"], horizontal=True)
-    designations = [s.designation for s in db.lightest_first()]
+    shapes_sorted = list(db.lightest_first())
+    label_to_us = {s.display_name: s.designation for s in shapes_sorted}
+    labels = list(label_to_us.keys())
+    default_label = next(
+        (s.display_name for s in shapes_sorted if s.designation == "W18X35"),
+        labels[0] if labels else "",
+    )
     if sec_mode == "W-shape catalog":
-        des = st.selectbox(
+        des_label = st.selectbox(
             "W-shape",
-            designations,
-            index=designations.index("W18X35") if "W18X35" in designations else 0,
+            labels,
+            index=labels.index(default_label) if default_label in labels else 0,
             key="wdes",
         )
-        shape = db.get(des)
+        shape = db.get(label_to_us[des_label])
     elif sec_mode == "Custom I-section":
         cc1, cc2, cc3, cc4 = st.columns(4)
         with cc1:
@@ -158,6 +164,7 @@ with tab_in:
         with cc4:
             tw_mm = si_number_input("tw (mm)", 4.0, 50.0, 7.6, 0.5, key="ctw_mm", dual=dual_length_mm)
         shape = custom_w_shape("CUSTOM", d_mm, bf_mm, tf_mm, tw_mm)
+        st.caption(shape.display_name)
     else:
         bc1, bc2, bc3, bc4 = st.columns(4)
         with bc1:
@@ -169,6 +176,7 @@ with tab_in:
         with bc4:
             twb_mm = si_number_input("Web tw (mm, each)", 6.0, 50.0, 12.7, 1.0, key="btw_mm", dual=dual_length_mm)
         shape = box_properties(H_mm, B_mm, tfb_mm, twb_mm, designation="BOX")
+        st.caption(shape.display_name)
         st.caption(
             f"A={shape.A_mm2:.0f} mm²; Ix={shape.Ix_mm4:.3e} mm⁴; "
             f"J={shape.J_mm4:.3e} mm⁴ (closed Bredt). Classification uses Table B4.1b cases 12/19."
@@ -470,7 +478,7 @@ with tab_sum:
             st.table(
                 [
                     {
-                        "Shape": p.designation,
+                        "Shape": p.display_name or p.designation,
                         "W (kg/m) [plf]": f"{p.W_lb_ft * 1.4881639:.1f} [{p.W_lb_ft:.0f}]",
                         "DCR_flex": round(p.DCR_flexure, 3),
                         "DCR_constr": round(p.DCR_construction, 3),

@@ -108,6 +108,7 @@ class PassingShape:
     DCR_flexure: float
     DCR_construction: float
     LL_OK: bool
+    display_name: str = ""
 
 
 @dataclass
@@ -546,7 +547,7 @@ class DesignEngine:
         return DesignResult(
             inputs_summary={
                 "L_mm": inp.L_mm,
-                "shape": inp.shape.designation,
+                "shape": getattr(inp.shape, "display_name", None) or inp.shape.designation,
                 "Fy_MPa": inp.steel.Fy_MPa,
                 "fc_MPa": inp.concrete.fc_MPa,
                 "method": inp.method,
@@ -618,6 +619,7 @@ class DesignEngine:
                         DCR_flexure=res.DCR_flexure,
                         DCR_construction=res.construction_LTB.DCR if res.construction_LTB else 0.0,
                         LL_OK=res.deflection.LL_OK,
+                        display_name=shape.display_name,
                     )
                 )
             if len(out) >= max_shapes:

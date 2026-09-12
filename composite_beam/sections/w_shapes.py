@@ -41,6 +41,7 @@ class WShape:
     ho_mm: float
     custom: bool = False
     section_kind: str = "W"  # "W" rolled/plate-girder I; "BOX" welded box
+    designation_metric: str = ""  # AISC soft dual, e.g. W460X52
     # imperial originals
     W_lb_ft: float = 0.0
     A_in2: float = 0.0
@@ -80,6 +81,71 @@ class WShape:
             return b_clear / self.tf_mm if self.tf_mm > 0 else 0.0
         return self.bf_mm / (2.0 * self.tf_mm)
 
+    @property
+    def display_name(self) -> str:
+        """Metric-first label with US customary in parentheses, e.g. W460×52 (W18×35)."""
+        return format_section_label(self.designation, self.designation_metric or None, shape=self)
+
+
+def _nice_times(s: str) -> str:
+    """Replace ASCII X separators in W-shape names with × for display."""
+    if not s:
+        return s
+    # Only replace designation-style X between digits / after W depth
+    out = []
+    for i, ch in enumerate(s):
+        if ch in ("X", "x") and i > 0 and i < len(s) - 1:
+            prev, nxt = s[i - 1], s[i + 1]
+            if (prev.isdigit() or prev == ".") and (nxt.isdigit() or nxt == "."):
+                out.append("×")
+                continue
+        out.append(ch)
+    return "".join(out)
+
+
+def _fmt_dim(v: float, prec: int = 1) -> str:
+    if abs(v - round(v)) < 1e-9:
+        return str(int(round(v)))
+    return f"{v:.{prec}f}".rstrip("0").rstrip(".")
+
+
+def format_section_label(
+    us: str,
+    metric: str | None = None,
+    *,
+    shape: "WShape | None" = None,
+) -> str:
+    """
+    SI-primary section label.
+
+    Rolled W: "{metric} ({us})" with × glyphs.
+    CUSTOM / BOX: leading SI plate dims + US dims in parentheses.
+    """
+    kind = getattr(shape, "section_kind", "W") if shape is not None else "W"
+    des = (us or "").strip()
+    upper = des.upper()
+
+    if shape is not None and (shape.custom or kind == "BOX" or upper in ("CUSTOM", "BOX") or upper.startswith("BOX")):
+        d = shape.d_mm
+        bf = shape.bf_mm
+        tf = shape.tf_mm
+        tw = shape.tw_mm
+        d_in = shape.d_in
+        bf_in = shape.bf_in
+        tf_in = shape.tf_in
+        tw_in = shape.tw_in
+        prefix = "BOX" if kind == "BOX" or upper.startswith("BOX") else "CUSTOM"
+        si = f"{prefix} {_fmt_dim(d)}×{_fmt_dim(bf)}×{_fmt_dim(tf)}×{_fmt_dim(tw)} mm"
+        us_dims = (
+            f"{_fmt_dim(d_in)}×{_fmt_dim(bf_in)}×{_fmt_dim(tf_in, 2)}×{_fmt_dim(tw_in, 2)} in"
+        )
+        return f"{si} ({us_dims})"
+
+    m = (metric or "").strip()
+    if m:
+        return f"{_nice_times(m)} ({_nice_times(des)})"
+    return _nice_times(des) if des else ""
+
 
 def _in_to_mm(v: float) -> float:
     return v * MM_PER_IN
@@ -114,6 +180,7 @@ def shape_from_row(row: dict) -> WShape:
     tf_in = float(row["tf_in"])
     return WShape(
         designation=row["designation"],
+        designation_metric=row.get("designation_metric", "") or "",
         W_kNm=_lbft_to_kNm(float(row["W_lb_ft"])),
         A_mm2=_in2_to_mm2(float(row["A_in2"])),
         d_mm=_in_to_mm(d_in),
@@ -205,6 +272,7 @@ def custom_w_shape(
 
     return WShape(
         designation=designation,
+        designation_metric="",
         W_kNm=W_kNm,
         A_mm2=A_mm2,
         d_mm=d_mm,

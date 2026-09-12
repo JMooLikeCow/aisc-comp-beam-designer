@@ -166,7 +166,7 @@ def result_to_xlsx_bytes(result: "DesignResult") -> bytes:
     _header(ws6, ["Shape", "W kg/m [plf]", "phiMn (kN·m [kip·ft])", "DCR_flex", "DCR_constr", "LL_OK"])
     _kg_m_per_plf = 1.4881639437
     for i, p in enumerate(result.passing_shapes, start=2):
-        ws6.cell(i, 1, p.designation)
+        ws6.cell(i, 1, p.display_name or p.designation)
         ws6.cell(i, 2, f"{p.W_lb_ft * _kg_m_per_plf:.1f} [{p.W_lb_ft:.0f}]")
         ws6.cell(i, 3, dual_moment_kNm(p.phiMn_kNm))
         ws6.cell(i, 4, round(p.DCR_flexure, 3))

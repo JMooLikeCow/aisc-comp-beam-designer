@@ -86,7 +86,7 @@ def summary_lines(result: "DesignResult") -> list[str]:
         for p in r.passing_shapes:
             kg_m = p.W_lb_ft * _KG_M_PER_PLF
             lines.append(
-                f"  {p.designation} ({kg_m:.1f} kg/m [{p.W_lb_ft:.0f} plf]): "
+                f"  {(p.display_name or p.designation)} ({kg_m:.1f} kg/m [{p.W_lb_ft:.0f} plf]): "
                 f"DCR_flex={p.DCR_flexure:.3f}, DCR_constr={p.DCR_construction:.3f}"
             )
     return lines
