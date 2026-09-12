@@ -63,6 +63,38 @@ def _Lr_mm(
     )
 
 
+def box_LTB_Mn(
+    shape: WShape,
+    Fy_MPa: float,
+    Lb_mm: float,
+    Cb: float = 1.0,
+    E_MPa: float = ES_MPA,
+) -> tuple[float, float, float, str]:
+    """
+    Rectangular HSS / box LTB — AISC F7.4 (360-16 and 360-22, same formulas).
+
+    Returns Mn_kNm, Lp_mm, Lr_mm, note.
+    """
+    Mp = min(Fy_MPa * shape.Zx_mm3 / 1e6, 1.6 * Fy_MPa * shape.Sx_mm3 / 1e6)
+    My = Fy_MPa * shape.Sx_mm3 / 1e6
+    ry = shape.ry_mm
+    Sx = shape.Sx_mm3
+    JA = shape.J_mm4 * shape.A_mm2
+    if Sx <= 0 or ry <= 0:
+        return Mp, 0.0, 0.0, "F7 LTB skipped (degenerate properties)"
+    root_JA = math.sqrt(max(JA, 0.0))
+    Lp = 0.13 * E_MPa * ry * root_JA / (Fy_MPa * Sx)  # F7-10
+    Lr = 2.0 * E_MPa * ry * root_JA / (0.7 * Fy_MPa * Sx)  # F7-11
+    if Lb_mm <= Lp:
+        return Mp, Lp, Lr, f"F7.4 LTB: Lb≤Lp={Lp:.0f} mm → yielding"
+    if Lb_mm <= Lr:
+        Mn = Cb * (Mp - (Mp - 0.7 * My) * (Lb_mm - Lp) / (Lr - Lp))
+        return min(Mn, Mp), Lp, Lr, f"F7-12 inelastic LTB (Lp={Lp:.0f}, Lr={Lr:.0f})"
+    Fcr = 2.0 * E_MPa * Cb * root_JA / (Sx * (Lb_mm / ry))
+    Mn = min(Fcr * Sx / 1e6, Mp)
+    return Mn, Lp, Lr, f"F7-13 elastic LTB Fcr={Fcr:.1f} MPa"
+
+
 def construction_LTB(
     shape: WShape,
     Fy_MPa: float,
@@ -98,6 +130,34 @@ def construction_LTB(
     else:
         Lb_eff = Lb_mm
         notes.append(f"Deck brace toggle OFF: unbraced length Lb = {Lb_mm:.0f} mm")
+
+    if getattr(shape, "section_kind", "W") == "BOX":
+        notes[0] = "AISC 360-22 §F7.4 — LTB of rectangular HSS / welded boxes (360-16 identical)."
+        Mn, Lp, Lr, note = box_LTB_Mn(shape, Fy_MPa, Lb_eff, Cb, E_MPa)
+        notes.append(note)
+        Mr = 0.7 * My
+        Fcr = Mn * 1e6 / shape.Sx_mm3 if shape.Sx_mm3 else 0.0
+        phiMn = phi_b * Mn
+        DCR = Mu_kNm / phiMn if phiMn > 0 else float("inf")
+        passes = DCR <= 1.0
+        notes.append(f"φMn={phiMn:.1f} kN·m; Mu={Mu_kNm:.1f} kN·m; DCR={DCR:.3f} → {'PASS' if passes else 'FAIL'}")
+        return LTBResult(
+            Mn_kNm=Mn,
+            phiMn_kNm=phiMn,
+            Mp_kNm=Mp,
+            Mr_kNm=Mr,
+            Fcr_MPa=Fcr,
+            Lb_mm=Lb_eff,
+            Lp_mm=Lp,
+            Lr_mm=Lr,
+            Cb=Cb,
+            braced_by_deck=braced_by_deck,
+            limit_state="F7_box_LTB",
+            passes=passes,
+            Mu_kNm=Mu_kNm,
+            DCR=DCR,
+            notes=notes,
+        )
 
     Lp = _Lp_mm(shape.ry_mm, Fy_MPa, E_MPa)
     Lr = _Lr_mm(shape, Fy_MPa, E_MPa)

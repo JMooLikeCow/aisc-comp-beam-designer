@@ -22,10 +22,20 @@ class BeamDiagram:
     M_max_kNmm: float
     M_max_x_mm: float
     V_max_kN: float
+    M_min_kNmm: float = 0.0
+    M_min_x_mm: float = 0.0
+    M_left_kNm: float = 0.0
+    M_right_kNm: float = 0.0
+    support: str = "simply_supported"
 
     @property
     def M_max_kNm(self) -> float:
         return self.M_max_kNmm / 1000.0
+
+    @property
+    def M_min_kNm(self) -> float:
+        """Most negative (hogging) moment along the span, kN·m."""
+        return self.M_min_kNmm / 1000.0
 
 
 @dataclass
@@ -89,6 +99,7 @@ def analyze_simply_supported(
         M[i] = Mi * 1000.0  # kN·m → kN·mm
 
     i_max = int(np.argmax(M))
+    i_min = int(np.argmin(M))
     return BeamDiagram(
         x_mm=x,
         V_kN=V,
@@ -98,6 +109,11 @@ def analyze_simply_supported(
         M_max_kNmm=float(M[i_max]),
         M_max_x_mm=float(x[i_max]),
         V_max_kN=float(np.max(np.abs(V))),
+        M_min_kNmm=float(M[i_min]),
+        M_min_x_mm=float(x[i_min]),
+        M_left_kNm=0.0,
+        M_right_kNm=0.0,
+        support="simply_supported",
     )
 
 
