@@ -30,3 +30,22 @@ def test_ec_codes():
 
 def test_unit_roundtrip():
     assert mpa_to_ksi(ksi_to_mpa(50.0)) == pytest.approx(50.0)
+
+
+def test_dual_helpers_si_primary():
+    from composite_beam.units import (
+        dual_force_kN,
+        dual_length_mm,
+        dual_line_load_kNpm,
+        dual_moment_kNm,
+        dual_stress_MPa,
+        plf_to_knpm,
+    )
+
+    assert dual_length_mm(9144.0) == "9144 mm [360.0 in]"
+    assert "MPa" in dual_stress_MPa(345.0) and "ksi" in dual_stress_MPa(345.0)
+    assert dual_stress_MPa(345.0).startswith("345")
+    s = dual_line_load_kNpm(plf_to_knpm(150.0))
+    assert "kN/m" in s and "plf" in s
+    assert "kN·m" in dual_moment_kNm(100.0) and "kip·ft" in dual_moment_kNm(100.0)
+    assert "kN" in dual_force_kN(44.48) and "kip" in dual_force_kN(44.48)

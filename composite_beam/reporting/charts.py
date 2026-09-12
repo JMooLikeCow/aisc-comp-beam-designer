@@ -35,8 +35,8 @@ def moment_shear_figures(result: "DesignResult") -> list:
             ],
             layout=go.Layout(
                 title="Bending moment (governing occupancy combo)",
-                xaxis_title="x (m)",
-                yaxis_title="M (kN·m)  +sagging / −hogging",
+                xaxis_title="x (m) [ft]",
+                yaxis_title="M (kN·m) [kip·ft]  +sagging / −hogging",
                 template="plotly_white",
                 height=320,
                 margin=dict(l=50, r=20, t=40, b=40),
@@ -58,7 +58,7 @@ def moment_shear_figures(result: "DesignResult") -> list:
             layout=go.Layout(
                 title="Shear (governing occupancy combo)",
                 xaxis_title="x (m)",
-                yaxis_title="V (kN)",
+                yaxis_title="V (kN) [kip]",
                 template="plotly_white",
                 height=320,
                 margin=dict(l=50, r=20, t=40, b=40),
@@ -149,7 +149,7 @@ def stud_layout_figure(result: "DesignResult"):
     fig.update_layout(
         title=f"Stud layout ({layout.n_total} studs)",
         xaxis_title="x (m)",
-        yaxis_title="row  /  scaled M",
+        yaxis_title="row  /  scaled M (kN·m) [kip·ft]",
         template="plotly_white",
         height=320,
         margin=dict(l=50, r=20, t=40, b=40),

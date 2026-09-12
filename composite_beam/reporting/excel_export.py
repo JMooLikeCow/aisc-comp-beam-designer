@@ -15,6 +15,14 @@ def result_to_xlsx_bytes(result: "DesignResult") -> bytes:
     from openpyxl.styles import Font, PatternFill, Alignment
 
     from composite_beam.reporting.summary import detailed_lines, summary_lines
+    from composite_beam.units import (
+        dual_force_kN,
+        dual_length_mm,
+        dual_moment_kNm,
+        kn_to_kip,
+        knm_to_kipft,
+        mm_to_in,
+    )
 
     wb = Workbook()
     header_font = Font(bold=True, color="FFFFFF")
@@ -43,7 +51,7 @@ def result_to_xlsx_bytes(result: "DesignResult") -> bytes:
 
     # --- Checks ---
     ws2 = wb.create_sheet("Checks")
-    _header(ws2, ["Check", "Demand", "Capacity", "DCR", "Pass"])
+    _header(ws2, ["Check", "Demand (SI [US])", "Capacity (SI [US])", "DCR", "Pass"])
     rows = [
         (
             "Positive flexure I3",
@@ -104,13 +112,21 @@ def result_to_xlsx_bytes(result: "DesignResult") -> bytes:
             result.deflection.LL_OK,
         )
     )
+    def _fmt_check(name: str, dem: float, cap: float) -> tuple[str, str]:
+        if "deflection" in name.lower() or "Live deflection" in name:
+            return dual_length_mm(float(dem), precision=1), dual_length_mm(float(cap), precision=1)
+        if "punching" in name.lower() or name.startswith("Ch.H"):
+            return dual_force_kN(float(dem)), dual_force_kN(float(cap))
+        return dual_moment_kNm(float(dem)), dual_moment_kNm(float(cap))
+
     for i, (chk, dem, cap, dcr, ok) in enumerate(rows, start=2):
+        dem_s, cap_s = _fmt_check(chk, dem, cap)
         ws2.cell(i, 1, chk)
-        ws2.cell(i, 2, round(float(dem), 3))
-        ws2.cell(i, 3, round(float(cap), 3))
+        ws2.cell(i, 2, dem_s)
+        ws2.cell(i, 3, cap_s)
         ws2.cell(i, 4, round(float(dcr), 3) if dcr != float("inf") else "inf")
         ws2.cell(i, 5, "PASS" if ok else "FAIL")
-    for col, w in zip("ABCDE", (28, 14, 14, 10, 10)):
+    for col, w in zip("ABCDE", (28, 36, 36, 10, 10)):
         ws2.column_dimensions[col].width = w
 
     # --- Detailed ---
@@ -123,15 +139,18 @@ def result_to_xlsx_bytes(result: "DesignResult") -> bytes:
 
     # --- Diagram ---
     ws4 = wb.create_sheet("Diagram")
-    _header(ws4, ["x_mm", "V_kN", "M_kNm"])
+    _header(ws4, ["x_mm", "x_in", "V_kN", "V_kip", "M_kNm", "M_kipft"])
     if result.diagram is not None:
         x = result.diagram.x_mm
         V = result.diagram.V_kN
         M = result.diagram.M_kNmm / 1000.0
         for i, (xi, vi, mi) in enumerate(zip(x, V, M), start=2):
             ws4.cell(i, 1, float(xi))
-            ws4.cell(i, 2, float(vi))
-            ws4.cell(i, 3, float(mi))
+            ws4.cell(i, 2, float(mm_to_in(xi)))
+            ws4.cell(i, 3, float(vi))
+            ws4.cell(i, 4, float(kn_to_kip(vi)))
+            ws4.cell(i, 5, float(mi))
+            ws4.cell(i, 6, float(knm_to_kipft(mi)))
 
     # --- Studs ---
     ws5 = wb.create_sheet("Studs")
@@ -144,11 +163,12 @@ def result_to_xlsx_bytes(result: "DesignResult") -> bytes:
 
     # --- Passing shapes ---
     ws6 = wb.create_sheet("PassingShapes")
-    _header(ws6, ["Shape", "plf", "phiMn_kNm", "DCR_flex", "DCR_constr", "LL_OK"])
+    _header(ws6, ["Shape", "W kg/m [plf]", "phiMn (kN·m [kip·ft])", "DCR_flex", "DCR_constr", "LL_OK"])
+    _kg_m_per_plf = 1.4881639437
     for i, p in enumerate(result.passing_shapes, start=2):
         ws6.cell(i, 1, p.designation)
-        ws6.cell(i, 2, p.W_lb_ft)
-        ws6.cell(i, 3, round(p.phiMn_kNm, 2))
+        ws6.cell(i, 2, f"{p.W_lb_ft * _kg_m_per_plf:.1f} [{p.W_lb_ft:.0f}]")
+        ws6.cell(i, 3, dual_moment_kNm(p.phiMn_kNm))
         ws6.cell(i, 4, round(p.DCR_flexure, 3))
         ws6.cell(i, 5, round(p.DCR_construction, 3))
         ws6.cell(i, 6, p.LL_OK)
