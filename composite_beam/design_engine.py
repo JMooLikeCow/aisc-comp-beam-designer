@@ -75,6 +75,11 @@ class DesignInputs:
     w_construction_kNpm: float = 0.0  # construction live on wet slab
     points_LL: list[PointLoad] = field(default_factory=list)
     points_DL: list[PointLoad] = field(default_factory=list)
+    points_C: list[PointLoad] = field(default_factory=list)
+    points_W: list[PointLoad] = field(default_factory=list)
+    points_E: list[PointLoad] = field(default_factory=list)
+    w_W_kNpm: float = 0.0
+    w_E_kNpm: float = 0.0
     include_beam_self_weight: bool = True
     include_slab_self_weight: bool = True
     slab_trib_width_mm: Optional[float] = None  # for slab SW; default beff
@@ -98,6 +103,10 @@ class DesignInputs:
     include_residual_concrete_tension: bool = False
     stud_zones: Optional[list[StudZone]] = None
     phi_c: float = 0.90
+    # UI table overrides (None = use CombinationSet built-ins)
+    occupancy_combinations: Optional[list[Combination]] = None
+    construction_combinations_override: Optional[list[Combination]] = None
+    project_label: str = ""
 
 
 @dataclass
@@ -176,6 +185,21 @@ def _analyze(
     )
 
 
+def _scaled_points(points: list[PointLoad], factor: float) -> list[PointLoad]:
+    if not factor:
+        return []
+    return [
+        PointLoad(
+            P_kN=p.P_kN * factor,
+            location=p.location,
+            spec=p.spec,
+            axial_kN=p.axial_kN * factor,
+            label=p.label,
+        )
+        for p in points
+    ]
+
+
 def _factored_analysis(
     inp: DesignInputs,
     w_D_kNpm: float,
@@ -183,20 +207,27 @@ def _factored_analysis(
     w_C_kNpm: float,
     points_L: list[PointLoad],
     combo: Combination,
+    *,
+    points_D: Optional[list[PointLoad]] = None,
+    points_C: Optional[list[PointLoad]] = None,
+    apply_lateral: bool = True,
 ) -> BeamDiagram:
-    """Apply combination factors to D, L, C roles; return the span diagram."""
+    """Apply combination factors to D, L, C (and W/E if present); return the span diagram."""
     w = (
         combo.factor("D") * w_D_kNpm
         + combo.factor("L") * w_L_kNpm
         + combo.factor("C") * w_C_kNpm
     )
+    if apply_lateral:
+        w += combo.factor("W") * inp.w_W_kNpm
+        w += combo.factor("E") * inp.w_E_kNpm
     pts: list[PointLoad] = []
-    fL = combo.factor("L")
-    if fL:
-        for p in points_L:
-            pts.append(
-                PointLoad(P_kN=p.P_kN * fL, location=p.location, spec=p.spec, label=p.label)
-            )
+    pts.extend(_scaled_points(points_L, combo.factor("L")))
+    pts.extend(_scaled_points(points_D or [], combo.factor("D")))
+    pts.extend(_scaled_points(points_C or [], combo.factor("C")))
+    if apply_lateral:
+        pts.extend(_scaled_points(inp.points_W, combo.factor("W")))
+        pts.extend(_scaled_points(inp.points_E, combo.factor("E")))
     return _analyze(inp, w, pts)
 
 
@@ -265,21 +296,32 @@ class DesignEngine:
         phi = _phi(inp)
 
         # Occupancy envelopes
-        cset = CombinationSet(
-            edition=inp.asce_edition,
-            method=inp.method,
-            include_construction=False,
-            custom=inp.custom_combinations[:5],
-        )
+        if inp.occupancy_combinations is not None:
+            occupancy_combos = list(inp.occupancy_combinations)
+        else:
+            occupancy_combos = CombinationSet(
+                edition=inp.asce_edition,
+                method=inp.method,
+                include_construction=False,
+                custom=inp.custom_combinations[:5],
+            ).all()
         Mu = 0.0
         Mu_neg = 0.0
         Vu = 0.0
         gov_diag: Optional[BeamDiagram] = None
         combo_notes = []
-        for combo in cset.all():
+        for combo in occupancy_combos:
             if combo.factor("C") and not (combo.factor("L") or combo.factor("D")):
                 continue
-            diag = _factored_analysis(inp, w_D_total, w_L, 0.0, inp.points_LL, combo)
+            diag = _factored_analysis(
+                inp,
+                w_D_total,
+                w_L,
+                0.0,
+                inp.points_LL,
+                combo,
+                points_D=inp.points_DL,
+            )
             combo_notes.append(
                 f"{combo.name}: Mu+={diag.M_max_kNm:.2f} kN·m, "
                 f"Mu−={diag.M_min_kNm:.2f} kN·m, Vu={diag.V_max_kN:.2f} kN"
@@ -331,9 +373,12 @@ class DesignEngine:
 
         # Construction LTB (steel alone)
         Lb = inp.Lb_construction_mm if inp.Lb_construction_mm is not None else inp.L_mm
-        constr_combos = CombinationSet(
-            edition=inp.asce_edition, method=inp.method, include_construction=True
-        ).all()
+        if inp.construction_combinations_override is not None:
+            constr_combos = list(inp.construction_combinations_override)
+        else:
+            constr_combos = CombinationSet(
+                edition=inp.asce_edition, method=inp.method, include_construction=True
+            ).all()
         Mu_c = 0.0
         Mu_c_neg = 0.0
         constr_diag: Optional[BeamDiagram] = None
@@ -341,7 +386,16 @@ class DesignEngine:
             if combo.factor("C") == 0 and "wet" not in combo.name.lower() and "C" not in combo.name:
                 if "1.2Dwet" not in combo.name and "Dwet" not in combo.name:
                     continue
-            dgc = _factored_analysis(inp, w_D_wet, 0.0, w_C, [], combo)
+            dgc = _factored_analysis(
+                inp,
+                w_D_wet,
+                0.0,
+                w_C,
+                [],
+                combo,
+                points_C=inp.points_C,
+                apply_lateral=False,
+            )
             if ("wet" in combo.name.lower()) or combo.factor("C") > 0:
                 if dgc.M_max_kNm > Mu_c:
                     Mu_c = dgc.M_max_kNm
@@ -554,6 +608,9 @@ class DesignEngine:
                 "location": inp.location.value,
                 "support": inp.support.value,
                 "section_kind": getattr(inp.shape, "section_kind", "W"),
+                "project_label": inp.project_label,
+                "aisc_edition": inp.aisc_edition.value,
+                "asce_edition": inp.asce_edition.value,
             },
             beff=beff_res,
             n=n,

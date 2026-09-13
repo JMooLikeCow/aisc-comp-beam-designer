@@ -8,6 +8,9 @@ from composite_beam.combinations.asce7 import (
     edition_flags,
     lrfd_gravity_combinations,
     asd_gravity_combinations,
+    builtin_combinations_for_table,
+    lrfd_basic_combinations,
+    asd_basic_combinations,
 )
 
 __all__ = [
@@ -18,4 +21,7 @@ __all__ = [
     "edition_flags",
     "lrfd_gravity_combinations",
     "asd_gravity_combinations",
+    "builtin_combinations_for_table",
+    "lrfd_basic_combinations",
+    "asd_basic_combinations",
 ]

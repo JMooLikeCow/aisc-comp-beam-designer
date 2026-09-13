@@ -171,3 +171,106 @@ def edition_flags(edition: ASCEEdition) -> list[str]:
             "ASCE 7-16: using 7-16 combination numbering; confirm W/E factors if lateral used."
         )
     return flags
+
+
+# ---------------------------------------------------------------------------
+# Full basic combinations for the UI table (does not change CombinationSet)
+# ---------------------------------------------------------------------------
+
+def lrfd_basic_combinations(edition: ASCEEdition = ASCEEdition.ASCE7_22) -> list[Combination]:
+    """ASCE 7 §2.3.1 representative set: gravity + simplified W/E legs."""
+    ed = edition.value
+    out = lrfd_gravity_combinations(edition)
+    out.extend(
+        [
+            Combination(
+                "1.2D+1.0W+L+0.5Lr",
+                {ROLE_D: 1.2, ROLE_W: 1.0, ROLE_L: 1.0, ROLE_LR: 0.5},
+                "LRFD",
+                ed,
+                "ASCE 7 §2.3.1",
+            ),
+            Combination(
+                "1.2D+1.0E+L+0.2S",
+                {ROLE_D: 1.2, ROLE_E: 1.0, ROLE_L: 1.0, ROLE_S: 0.2},
+                "LRFD",
+                ed,
+                "ASCE 7 §2.3.1",
+            ),
+            Combination(
+                "0.9D+1.0W",
+                {ROLE_D: 0.9, ROLE_W: 1.0},
+                "LRFD",
+                ed,
+                "ASCE 7 §2.3.1",
+            ),
+            Combination(
+                "0.9D+1.0E",
+                {ROLE_D: 0.9, ROLE_E: 1.0},
+                "LRFD",
+                ed,
+                "ASCE 7 §2.3.1",
+            ),
+        ]
+    )
+    return out
+
+
+def asd_basic_combinations(edition: ASCEEdition = ASCEEdition.ASCE7_22) -> list[Combination]:
+    """ASCE 7 §2.4.1 representative set: gravity + simplified W/E legs."""
+    ed = edition.value
+    out = asd_gravity_combinations(edition)
+    out.extend(
+        [
+            Combination(
+                "D+0.6W",
+                {ROLE_D: 1.0, ROLE_W: 0.6},
+                "ASD",
+                ed,
+                "ASCE 7 §2.4.1",
+            ),
+            Combination(
+                "D+0.75L+0.45W+0.75Lr",
+                {ROLE_D: 1.0, ROLE_L: 0.75, ROLE_W: 0.45, ROLE_LR: 0.75},
+                "ASD",
+                ed,
+                "ASCE 7 §2.4.1 (0.75×0.6W)",
+            ),
+            Combination(
+                "D+0.75L+0.525E+0.75S",
+                {ROLE_D: 1.0, ROLE_L: 0.75, ROLE_E: 0.525, ROLE_S: 0.75},
+                "ASD",
+                ed,
+                "ASCE 7 §2.4.1 (0.75×0.7E)",
+            ),
+            Combination(
+                "0.6D+0.6W",
+                {ROLE_D: 0.6, ROLE_W: 0.6},
+                "ASD",
+                ed,
+                "ASCE 7 §2.4.1",
+            ),
+            Combination(
+                "0.6D+0.7E",
+                {ROLE_D: 0.6, ROLE_E: 0.7},
+                "ASD",
+                ed,
+                "ASCE 7 §2.4.1",
+            ),
+        ]
+    )
+    return out
+
+
+def builtin_combinations_for_table(
+    edition: ASCEEdition = ASCEEdition.ASCE7_22,
+    method: str = "LRFD",
+) -> list[Combination]:
+    """Built-in occupancy + matching construction combo for the UI editor."""
+    method_u = method.upper()
+    if method_u == "ASD":
+        base = asd_basic_combinations(edition)
+    else:
+        base = lrfd_basic_combinations(edition)
+    constr = [c for c in construction_combinations(edition) if c.method == method_u]
+    return base + constr

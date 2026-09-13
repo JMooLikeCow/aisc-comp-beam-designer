@@ -19,27 +19,24 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from app.components.load_tables import render_combo_table, render_load_tables
+from app.components.results_dashboard import render_results_dashboard
 from app.components.si_inputs import si_int_input
 from composite_beam.analysis.continuous import SupportType
-from composite_beam.combinations.asce7 import ASCEEdition, Combination
+from composite_beam.combinations.asce7 import ASCEEdition
 from composite_beam.composite.effective_width import AISCEdition, BeamLocation
 from composite_beam.composite.slab import DeckOrientation, SlabConfig, catalog_hr_wr_mm, load_deck_catalog
 from composite_beam.composite.stud_layout import StudZone
 from composite_beam.composite.studs import StudConfig
 from composite_beam.design_engine import DesignEngine, DesignInputs
-from composite_beam.loads.load_cases import PointLoad, PointLoadSpec, default_empty_load_set
 from composite_beam.materials.concrete import ConcreteMaterial, EcCode
 from composite_beam.materials.steel import SteelMaterial, load_steel_grades
-from composite_beam.reporting.charts import interaction_figure, moment_shear_figures, stud_layout_figure
-from composite_beam.reporting.excel_export import result_to_xlsx_bytes
-from composite_beam.reporting.summary import detailed_lines, summary_lines
+from composite_beam.reporting.summary import detailed_lines
 from composite_beam.sections.box_sections import box_properties
 from composite_beam.sections.w_shapes import WShapeDatabase, custom_w_shape
 from composite_beam.serviceability.deflection import DeflectionLimits
 from composite_beam.units import (
-    dual_force_kN,
     dual_length_mm,
-    dual_line_load_kNpm,
     dual_moment_kNm,
     dual_stress_MPa,
 )
@@ -49,7 +46,7 @@ st.title("AISC Comp Beam Designer")
 st.caption(
     "Primary SI (kN, mm, MPa); US customary in brackets. "
     "AISC 360-16/22 · ASCE 7-16/22. Whole-number SI inputs "
-    "(decimals kept for x/L, K, n override, load factors)."
+    "(decimals kept for x/L, K, n override, load factors). Loads and combinations are Excel-like tables."
 )
 
 
@@ -65,6 +62,12 @@ decks = load_deck_catalog()
 tab_in, tab_sum, tab_det = st.tabs(["Input", "Summary", "Detailed Calculations"])
 
 with tab_in:
+    project_label = st.text_input(
+        "Project / beam label",
+        value="Composite beam",
+        key="project_label",
+        help="Printed on the Summary results sheet header.",
+    )
     st.subheader("Geometry & codes")
     c1, c2, c3 = st.columns(3)
     with c1:
@@ -374,73 +377,17 @@ with tab_in:
         "Full composite hogging PNA is not assumed (AISC I3 requires longitudinal slab rebar)."
     )
 
-    st.subheader("Loads (service / nominal)")
-    w_SDL_kNpm = si_int_input(
-        "Superimposed dead SDL (kN/m on beam)",
-        0,
-        30,
-        2,
-        1,
-        key="sdl_kNpm",
-        dual=dual_line_load_kNpm,
-    )
-    w_LL_kNpm = si_int_input(
-        "Live load L (kN/m on beam)",
-        0,
-        75,
-        7,
-        1,
-        key="ll_kNpm",
-        dual=dual_line_load_kNpm,
-    )
-    w_C_kNpm = si_int_input(
-        "Construction live C (kN/m)",
-        0,
-        30,
-        1,
-        1,
-        key="clive_kNpm",
-        dual=dual_line_load_kNpm,
-    )
-    n_pts = st.number_input("Number of LL point loads", 0, 10, 0, key="npts")
-    points_LL = []
-    for i in range(int(n_pts)):
-        pc1, pc2 = st.columns(2)
-        with pc1:
-            P_kN = si_int_input(
-                f"P{i+1} (kN)", 0, 2200, 45, 1, key=f"P_kN{i}", dual=dual_force_kN
-            )
-        st.caption("Decimal exception: location ratio x/L.")
-        ratio = pc2.number_input(f"Location ratio x/L {i+1}", 0.0, 1.0, 0.5, key=f"r{i}")
-        points_LL.append(PointLoad(P_kN=float(P_kN), location=ratio, spec=PointLoadSpec.RATIO))
+    parsed_loads = render_load_tables(float(L_mm))
 
     st.subheader("Axial (Chapter H)")
-    Pu_kN = si_int_input(
-        "Required axial Pr (kN, compression +ve; 0=flexure only)",
-        -9000,
-        9000,
-        0,
-        1,
-        key="Pu_kN",
-        dual=dual_force_kN,
+    st.caption(
+        "Pr comes from the load table: **Pu_kN = sum of Axial_kN on included rows** "
+        "(dedicated Axial row, or per-case axial). "
+        "Decimal exception: effective length factor K."
     )
-    st.caption("Decimal exception: effective length factor K.")
     Kfac = st.number_input("Effective length factor K (E3)", 0.5, 2.0, 1.0, 0.05, key="K")
 
-    st.subheader("Custom combinations (up to 5)")
-    st.caption("Decimal exception: ASCE / custom load factors.")
-    n_custom = st.number_input("Custom combos", 0, 5, 0, key="ncu")
-    custom = []
-    for i in range(int(n_custom)):
-        name = st.text_input(f"Combo {i+1} name", f"CUSTOM{i+1}", key=f"cn{i}")
-        fD = st.number_input(f"D factor {i+1}", 0.0, 2.0, 1.2, key=f"cd{i}")
-        fL = st.number_input(f"L factor {i+1}", 0.0, 2.0, 1.6, key=f"cl{i}")
-        custom.append(Combination(name=name, factors={"D": fD, "L": fL}, method=method, edition=asce_ed))
-
-    st.subheader("Load case scaffold (data model)")
-    with st.expander("All load case slots (SW, SDL, misc D/L, E, W, T, C)"):
-        ls = default_empty_load_set()
-        st.write([c.name for c in ls.cases])
+    parsed_combos = render_combo_table(asce_ed, method)
 
     run = st.button("Run design", type="primary")
 
@@ -475,21 +422,19 @@ if run:
         n_studs_half_span=int(n_studs) if n_studs else None,
         target_composite_ratio=target_ratio,
         n_override=n_ov if n_ov > 0 else None,
-        w_SDL_kNpm=float(w_SDL_kNpm),
-        w_LL_kNpm=float(w_LL_kNpm),
-        w_construction_kNpm=float(w_C_kNpm),
-        points_LL=points_LL,
+        **parsed_loads.as_design_kwargs(),
         shored=shored,
         deck_braces_construction=deck_brace,
         camber_mm=float(camber_mm),
         deflection_limits=DeflectionLimits(),
         method=method,
-        custom_combinations=custom,
+        occupancy_combinations=parsed_combos.occupancy_or_none(),
+        construction_combinations_override=parsed_combos.construction_or_none(),
         support=support,
         M_left_override_kNm=ML,
         M_right_override_kNm=MR,
-        Pu_kN=float(Pu_kN),
         K_factor=Kfac,
+        project_label=project_label,
         Lb_neg_mm=float(Lb_neg_mm) if Lb_neg_mm > 0 else None,
         include_residual_concrete_tension=residual,
         stud_zones=stud_zones,
@@ -503,62 +448,7 @@ with tab_sum:
     if res is None:
         st.info("Run a design from the Input tab.")
     else:
-        for line in summary_lines(res):
-            st.text(line)
-        st.metric("Overall", "PASS" if res.overall_pass else "FAIL")
-        mcols = st.columns(5)
-        mcols[0].metric("DCR flexure +", f"{res.DCR_flexure:.3f}")
-        if res.construction_LTB:
-            mcols[1].metric("DCR construction", f"{res.construction_LTB.DCR:.3f}")
-        mcols[2].metric("φMn+", dual_moment_kNm(res.positive_moment.phiMn_kNm))
-        if res.negative_moment is not None:
-            mcols[3].metric("DCR hogging −", f"{res.negative_moment.DCR:.3f}")
-        if res.interaction is not None:
-            mcols[4].metric(f"DCR {res.interaction.equation}", f"{res.interaction.DCR:.3f}")
-        if res.punching is not None:
-            st.caption(
-                f"Punching DCR={res.punching.DCR:.3f} (ACI 318-19 §22.6). "
-                "Thin slabs often govern around 19 mm studs — increase t_solid or spacing."
-            )
-
-        st.subheader("Diagrams")
-        for fig in moment_shear_figures(res):
-            st.plotly_chart(fig, use_container_width=True)
-        fig_h = interaction_figure(res)
-        if fig_h is not None:
-            st.plotly_chart(fig_h, use_container_width=True)
-        else:
-            st.caption("Chapter H interaction plot appears when Pr ≠ 0.")
-        fig_s = stud_layout_figure(res)
-        if fig_s is not None:
-            st.plotly_chart(fig_s, use_container_width=True)
-        else:
-            st.caption("Enable four-zone stud spacing on Input to plot the stud layout.")
-
-        try:
-            xls = result_to_xlsx_bytes(res)
-            st.download_button(
-                "Download Excel report",
-                data=xls,
-                file_name="aisc_comp_beam_design.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            )
-        except Exception as exc:  # pragma: no cover
-            st.warning(f"Excel export unavailable: {exc}")
-
-        if res.passing_shapes:
-            st.subheader("Passing W-shapes (lightest → heaviest)")
-            st.table(
-                [
-                    {
-                        "Shape": p.display_name or p.designation,
-                        "W (kg/m) [plf]": f"{p.W_lb_ft * 1.4881639:.1f} [{p.W_lb_ft:.0f}]",
-                        "DCR_flex": round(p.DCR_flexure, 3),
-                        "DCR_constr": round(p.DCR_construction, 3),
-                    }
-                    for p in res.passing_shapes
-                ]
-            )
+        render_results_dashboard(res, project_label=res.inputs_summary.get("project_label", ""))
 
 with tab_det:
     res = st.session_state.result

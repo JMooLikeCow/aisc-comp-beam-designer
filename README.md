@@ -24,7 +24,7 @@ streamlit run streamlit_app.py
 
 Tabs: **Input** · **Summary** · **Detailed Calculations** (AISC section citations + 360-16 vs 22 / ASCE 7-16 vs 22 flags).
 
-Summary includes moment/shear diagrams, Chapter H interaction, stud-layout plot, and **Excel export**.
+Summary is a one-page graphical results sheet (header, DCR KPI bars, 2×2 diagrams, capacity table, passing shapes) with **Excel** and **HTML** (`aisc_comp_beam_results.html`) download.
 
 ## Run tests
 
@@ -52,8 +52,10 @@ tests/
 | Feature | Status |
 |--------|--------|
 | Simply supported beam, UDL + point loads | Done (P0) |
+| Excel-like **load-case table** (SW/SDL/misc D/L, C, E, W, T, axial) + compact extra points | Done |
+| Graphical Summary results sheet + HTML download | Done |
 | Fixed-fixed and fixed-pinned continuous analysis; variable end moments; UDL + points | Done (P1) |
-| ASCE 7-16 / 7-22 LRFD (+ ASD) gravity combos + ≤5 custom | Done |
+| ASCE 7-16 / 7-22 LRFD (+ ASD) gravity + W/E combo **table** (editable factors, Include, ≤5 custom) | Done |
 | Construction combos separate from occupancy | Done |
 | Full AISC W-shape CSV (~283) + custom I-section + **custom welded box** | Done |
 | Steel grades A992 / A572-50 / A36 (thickness-aware Fy) | Done |
@@ -73,6 +75,7 @@ tests/
 | Camber manual + 80% DL suggestion; warn if >100% DL Δ | Done |
 | Design check DCRs + up to 10 passing W shapes lightest→heaviest | Done |
 | **Excel export** from Summary (openpyxl) | Done (P1) |
+| **HTML results sheet** (`aisc_comp_beam_results.html`) | Done |
 | **Graphics**: M/V diagrams, H interaction, stud layout (plotly) | Done (P1) |
 
 ## Data sources
