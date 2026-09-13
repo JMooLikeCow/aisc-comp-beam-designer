@@ -1,42 +1,134 @@
 {
   "solid": {
     "name": "Solid slab (no deck)",
-    "hr_in": 0.0,
-    "wr_in": 0.0,
+    "hr_mm": 0,
+    "wr_mm": 0,
     "orientation": "none",
-    "weight_psf": 0.0,
-    "notes": "Full solid concrete slab on steel beam"
+    "gauges_mm": [],
+    "cover_width_mm": 0,
+    "pitch_mm": 0,
+    "profile_type": "solid",
+    "source": "N/A — solid concrete slab on steel beam",
+    "notes": "Full solid concrete slab; no metal deck"
   },
-  "2VLI22": {
-    "name": "2 in VLI 22 ga",
-    "hr_in": 2.0,
-    "wr_in": 6.0,
+  "comflor_46": {
+    "name": "ComFlor® 46",
+    "hr_mm": 46,
+    "wr_mm": 150,
     "orientation": "perpendicular",
-    "weight_psf": 2.0,
-    "notes": "Typical 2\" composite deck; ribs perpendicular to beam"
+    "gauges_mm": [0.9, 1.2],
+    "cover_width_mm": 900,
+    "pitch_mm": 225,
+    "profile_type": "trapezoidal",
+    "source": "Tata Steel / Building Systems UK ComFlor® range overview & technical manual",
+    "notes": "Shallow over-beam deck; 900 mm cover, 225 mm pitch. wr_mm ≈ average trough for AISC Rg/Rp."
   },
-  "2VLI20": {
-    "name": "2 in VLI 20 ga",
-    "hr_in": 2.0,
-    "wr_in": 6.0,
+  "comflor_51_plus": {
+    "name": "ComFlor® 51+",
+    "hr_mm": 51,
+    "wr_mm": 50,
     "orientation": "perpendicular",
-    "weight_psf": 2.5,
-    "notes": "Heavier 2\" deck"
+    "gauges_mm": [0.9, 1.0, 1.2],
+    "cover_width_mm": 600,
+    "pitch_mm": 150,
+    "profile_type": "re-entrant",
+    "source": "Tata Steel / Building Systems UK ComFlor® range overview & technical manual",
+    "notes": "Re-entrant profile. Default orientation perpendicular to beam; parallel also common — override in UI. wr_mm ≈ opening/average for Rg/Rp."
   },
-  "3VLI22": {
-    "name": "3 in VLI 22 ga",
-    "hr_in": 3.0,
-    "wr_in": 12.0,
+  "comflor_60": {
+    "name": "ComFlor® 60",
+    "hr_mm": 60,
+    "wr_mm": 150,
     "orientation": "perpendicular",
-    "weight_psf": 2.8,
-    "notes": "3\" composite deck"
+    "gauges_mm": [0.9, 1.0, 1.2],
+    "cover_width_mm": 600,
+    "pitch_mm": 300,
+    "profile_type": "trapezoidal",
+    "source": "Tata Steel / Building Systems UK ComFlor® range overview & technical manual",
+    "notes": "Trapezoidal; valley≈120 mm / crown≈180 mm → wr_mm avg 150. Typical over-beam orientation: perpendicular."
   },
-  "1.5B22": {
-    "name": "1.5 in B deck 22 ga",
-    "hr_in": 1.5,
-    "wr_in": 6.0,
-    "orientation": "parallel",
-    "weight_psf": 1.8,
-    "notes": "Form deck; ribs often parallel to beam"
+  "comflor_60_closed": {
+    "name": "ComFlor® 60 closed ends",
+    "hr_mm": 60,
+    "wr_mm": 150,
+    "orientation": "perpendicular",
+    "gauges_mm": [0.9, 1.0, 1.2],
+    "cover_width_mm": 600,
+    "pitch_mm": 300,
+    "profile_type": "trapezoidal",
+    "source": "Tata Steel / Building Systems UK ComFlor® range overview & technical manual",
+    "notes": "Same geometry as ComFlor 60 with closed ends option."
+  },
+  "comflor_80": {
+    "name": "ComFlor® 80",
+    "hr_mm": 80,
+    "wr_mm": 150,
+    "orientation": "perpendicular",
+    "gauges_mm": [0.9, 1.0, 1.2],
+    "cover_width_mm": 600,
+    "pitch_mm": 300,
+    "profile_type": "trapezoidal",
+    "source": "Tata Steel / Building Systems UK ComFlor® range overview & technical manual",
+    "notes": "Deeper trapezoidal over-beam deck; 300 mm pitch."
+  },
+  "comflor_80_closed": {
+    "name": "ComFlor® 80 closed ends",
+    "hr_mm": 80,
+    "wr_mm": 150,
+    "orientation": "perpendicular",
+    "gauges_mm": [0.9, 1.0, 1.2],
+    "cover_width_mm": 600,
+    "pitch_mm": 300,
+    "profile_type": "trapezoidal",
+    "source": "Tata Steel / Building Systems UK ComFlor® range overview & technical manual",
+    "notes": "Same geometry as ComFlor 80 with closed ends option."
+  },
+  "comflor_100": {
+    "name": "ComFlor® 100",
+    "hr_mm": 100,
+    "wr_mm": 140,
+    "orientation": "perpendicular",
+    "gauges_mm": [0.9, 1.2],
+    "cover_width_mm": 700,
+    "pitch_mm": 233,
+    "profile_type": "trapezoidal",
+    "source": "Tata Steel / Building Systems UK ComFlor® range overview & technical manual",
+    "notes": "Deep trapezoidal; 700 mm cover, 233 mm pitch. wr_mm approximate average trough."
+  },
+  "comflor_210": {
+    "name": "ComFlor® 210",
+    "hr_mm": 210,
+    "wr_mm": 300,
+    "orientation": "perpendicular",
+    "gauges_mm": [1.0, 1.25],
+    "cover_width_mm": 600,
+    "pitch_mm": 600,
+    "profile_type": "deep",
+    "source": "Tata Steel / Building Systems UK ComFlor® range overview & technical manual",
+    "notes": "Deep deck (long-span / integrated beams). wr_mm approximate average trough."
+  },
+  "comflor_225": {
+    "name": "ComFlor® 225",
+    "hr_mm": 225,
+    "wr_mm": 300,
+    "orientation": "perpendicular",
+    "gauges_mm": [1.25],
+    "cover_width_mm": 600,
+    "pitch_mm": 600,
+    "profile_type": "deep",
+    "source": "Tata Steel / Building Systems UK ComFlor® range overview & technical manual",
+    "notes": "Deepest ComFlor profile. wr_mm approximate average trough."
+  },
+  "manual": {
+    "name": "Manual / custom deck",
+    "hr_mm": 50,
+    "wr_mm": 150,
+    "orientation": "perpendicular",
+    "gauges_mm": [],
+    "cover_width_mm": 0,
+    "pitch_mm": 0,
+    "profile_type": "custom",
+    "source": "User override",
+    "notes": "Enter hr_mm and wr_mm manually in the UI."
   }
 }

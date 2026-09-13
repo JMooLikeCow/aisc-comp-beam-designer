@@ -2,6 +2,10 @@
 
 SI is the primary input and display system; US customary equivalents update
 in real time in brackets next to every dimensional / force / stress / moment quantity.
+
+Whole-number SI inputs (integer widgets) for dimensions, forces, stresses,
+moments, and line loads. Decimal exceptions: x/L ratios, K factor, n override,
+ASCE load factors.
 """
 
 from __future__ import annotations
@@ -15,11 +19,11 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from app.components.si_inputs import si_number_input
+from app.components.si_inputs import si_int_input
 from composite_beam.analysis.continuous import SupportType
 from composite_beam.combinations.asce7 import ASCEEdition, Combination
 from composite_beam.composite.effective_width import AISCEdition, BeamLocation
-from composite_beam.composite.slab import DeckOrientation, SlabConfig, load_deck_catalog
+from composite_beam.composite.slab import DeckOrientation, SlabConfig, catalog_hr_wr_mm, load_deck_catalog
 from composite_beam.composite.stud_layout import StudZone
 from composite_beam.composite.studs import StudConfig
 from composite_beam.design_engine import DesignEngine, DesignInputs
@@ -44,7 +48,8 @@ st.set_page_config(page_title="AISC Comp Beam Designer", layout="wide", page_ico
 st.title("AISC Comp Beam Designer")
 st.caption(
     "Primary SI (kN, mm, MPa); US customary in brackets. "
-    "AISC 360-16/22 · ASCE 7-16/22. Keyboard-friendly number inputs."
+    "AISC 360-16/22 · ASCE 7-16/22. Whole-number SI inputs "
+    "(decimals kept for x/L, K, n override, load factors)."
 )
 
 
@@ -63,39 +68,39 @@ with tab_in:
     st.subheader("Geometry & codes")
     c1, c2, c3 = st.columns(3)
     with c1:
-        L_mm = si_number_input(
-            "Span L (mm)", 1500.0, 36500.0, 9144.0, 50.0, key="L_mm", dual=dual_length_mm
+        L_mm = si_int_input(
+            "Span L (mm)", 1500, 36500, 9144, 1, key="L_mm", dual=dual_length_mm
         )
         location = st.selectbox("Beam location", ["interior", "edge"], key="loc")
         aisc_ed = st.selectbox("AISC edition", ["AISC360-22", "AISC360-16"], key="aisc")
         asce_ed = st.selectbox("ASCE 7 edition", ["ASCE7-22", "ASCE7-16"], key="asce")
         method = st.selectbox("Design method", ["LRFD", "ASD"], key="method")
     with c2:
-        sL_mm = si_number_input(
+        sL_mm = si_int_input(
             "Spacing / adj. left (mm)",
-            300.0,
-            12000.0,
-            3048.0,
-            50.0,
+            300,
+            12000,
+            3048,
+            1,
             key="sL_mm",
             dual=dual_length_mm,
         )
-        sR_default = 3048.0 if location == "interior" else 914.0
-        sR_mm = si_number_input(
+        sR_default = 3048 if location == "interior" else 914
+        sR_mm = si_int_input(
             "Spacing right / edge overhang (mm)",
-            150.0,
-            12000.0,
-            sR_default,
-            50.0,
+            150,
+            12000,
+            int(sR_default),
+            1,
             key="sR_mm",
             dual=dual_length_mm,
         )
-        beff_ov = si_number_input(
+        beff_ov = si_int_input(
             "beff override (mm, 0=auto)",
-            0.0,
-            7600.0,
-            0.0,
-            25.0,
+            0,
+            7600,
+            0,
+            1,
             key="beff_mm",
             dual=dual_length_mm,
         )
@@ -113,25 +118,25 @@ with tab_in:
     with c3:
         shored = st.checkbox("Shored construction", False, key="shored")
         deck_brace = st.checkbox("Deck braces compression flange (construction sagging)", True, key="deckb")
-        camber_mm = si_number_input(
-            "Camber (mm)", 0.0, 150.0, 0.0, 5.0, key="camber_mm", dual=dual_length_mm
+        camber_mm = si_int_input(
+            "Camber (mm)", 0, 150, 0, 1, key="camber_mm", dual=dual_length_mm
         )
         use_fem = st.checkbox("Use elastic FEM end moments", True, key="fem")
-        M_left_ov_kNm = si_number_input(
+        M_left_ov_kNm = si_int_input(
             "M left override (kN·m, hogging −ve; 0=FEM)",
-            -30000.0,
-            30000.0,
-            0.0,
-            10.0,
+            -30000,
+            30000,
+            0,
+            1,
             key="MLov_kNm",
             dual=dual_moment_kNm,
         )
-        M_right_ov_kNm = si_number_input(
+        M_right_ov_kNm = si_int_input(
             "M right override (kN·m, hogging −ve; 0=FEM)",
-            -30000.0,
-            30000.0,
-            0.0,
-            10.0,
+            -30000,
+            30000,
+            0,
+            1,
             key="MRov_kNm",
             dual=dual_moment_kNm,
         )
@@ -156,26 +161,26 @@ with tab_in:
     elif sec_mode == "Custom I-section":
         cc1, cc2, cc3, cc4 = st.columns(4)
         with cc1:
-            d_mm = si_number_input("d (mm)", 100.0, 1000.0, 457.0, 5.0, key="cd_mm", dual=dual_length_mm)
+            d_mm = si_int_input("d (mm)", 100, 1000, 457, 1, key="cd_mm", dual=dual_length_mm)
         with cc2:
-            bf_mm = si_number_input("bf (mm)", 100.0, 600.0, 152.0, 5.0, key="cbf_mm", dual=dual_length_mm)
+            bf_mm = si_int_input("bf (mm)", 100, 600, 152, 1, key="cbf_mm", dual=dual_length_mm)
         with cc3:
-            tf_mm = si_number_input("tf (mm)", 5.0, 75.0, 10.8, 0.5, key="ctf_mm", dual=dual_length_mm)
+            tf_mm = si_int_input("tf (mm)", 5, 75, 11, 1, key="ctf_mm", dual=dual_length_mm)
         with cc4:
-            tw_mm = si_number_input("tw (mm)", 4.0, 50.0, 7.6, 0.5, key="ctw_mm", dual=dual_length_mm)
-        shape = custom_w_shape("CUSTOM", d_mm, bf_mm, tf_mm, tw_mm)
+            tw_mm = si_int_input("tw (mm)", 4, 50, 8, 1, key="ctw_mm", dual=dual_length_mm)
+        shape = custom_w_shape("CUSTOM", float(d_mm), float(bf_mm), float(tf_mm), float(tw_mm))
         st.caption(shape.display_name)
     else:
         bc1, bc2, bc3, bc4 = st.columns(4)
         with bc1:
-            H_mm = si_number_input("Box depth H (mm)", 150.0, 1200.0, 406.0, 5.0, key="bH_mm", dual=dual_length_mm)
+            H_mm = si_int_input("Box depth H (mm)", 150, 1200, 406, 1, key="bH_mm", dual=dual_length_mm)
         with bc2:
-            B_mm = si_number_input("Box width B (mm)", 150.0, 900.0, 305.0, 5.0, key="bB_mm", dual=dual_length_mm)
+            B_mm = si_int_input("Box width B (mm)", 150, 900, 305, 1, key="bB_mm", dual=dual_length_mm)
         with bc3:
-            tfb_mm = si_number_input("Flange tf (mm)", 6.0, 75.0, 19.0, 1.0, key="btf_mm", dual=dual_length_mm)
+            tfb_mm = si_int_input("Flange tf (mm)", 6, 75, 19, 1, key="btf_mm", dual=dual_length_mm)
         with bc4:
-            twb_mm = si_number_input("Web tw (mm, each)", 6.0, 50.0, 12.7, 1.0, key="btw_mm", dual=dual_length_mm)
-        shape = box_properties(H_mm, B_mm, tfb_mm, twb_mm, designation="BOX")
+            twb_mm = si_int_input("Web tw (mm, each)", 6, 50, 13, 1, key="btw_mm", dual=dual_length_mm)
+        shape = box_properties(float(H_mm), float(B_mm), float(tfb_mm), float(twb_mm), designation="BOX")
         st.caption(shape.display_name)
         st.caption(
             f"A={shape.A_mm2:.0f} mm²; Ix={shape.Ix_mm4:.3e} mm⁴; "
@@ -183,75 +188,140 @@ with tab_in:
         )
 
     gkey = st.selectbox("Steel grade", list(grades.keys()), index=0, key="grade")
-    Fy_ov = si_number_input(
+    Fy_ov = si_int_input(
         "Fy override (MPa, 0=catalog)",
-        0.0,
-        690.0,
-        0.0,
-        5.0,
+        0,
+        690,
+        0,
+        1,
         key="Fyov_MPa",
         dual=dual_stress_MPa,
     )
     steel = SteelMaterial.from_grade(
         gkey,
         tf_mm=shape.tf_mm,
-        Fy_override_MPa=Fy_ov if Fy_ov > 0 else None,
+        Fy_override_MPa=float(Fy_ov) if Fy_ov > 0 else None,
     )
     st.write(f"Fy = {dual_stress_MPa(steel.Fy_MPa)}")
 
     st.subheader("Slab / deck / concrete")
-    dkey = st.selectbox("Deck catalog", list(decks.keys()), index=0, key="deck")
-    t_solid_mm = si_number_input(
+    st.caption(
+        "Deck catalog: **Tata Steel ComFlor®** composite floor decking "
+        "(range overview / technical manual). Selecting a profile auto-fills "
+        "rib depth (hr) and average trough width (wr). Use **manual** for custom values."
+    )
+    deck_keys = list(decks.keys())
+    deck_labels = [f"{k} — {decks[k].get('name', k)}" for k in deck_keys]
+    d_idx = st.selectbox(
+        "Deck catalog",
+        range(len(deck_keys)),
+        format_func=lambda i: deck_labels[i],
+        index=0,
+        key="deck_idx",
+    )
+    dkey = deck_keys[d_idx]
+    entry = decks[dkey]
+    cat_hr, cat_wr = catalog_hr_wr_mm(entry)
+
+    # Auto-fill hr/wr from catalog whenever selection changes
+    if st.session_state.get("_deck_key_prev") != dkey:
+        st.session_state["hr_mm"] = int(round(cat_hr))
+        st.session_state["wr_mm"] = int(round(cat_wr))
+        st.session_state["_deck_key_prev"] = dkey
+        # Also sync orientation default when catalog changes
+        st.session_state["orient"] = entry.get("orientation", "none")
+
+    t_solid_mm = si_int_input(
         "Solid thickness above deck / total solid (mm)",
-        50.0,
-        300.0,
-        100.0,
-        5.0,
+        50,
+        300,
+        100,
+        1,
         key="tsol_mm",
         dual=dual_length_mm,
     )
-    fc_MPa = si_number_input(
-        "f'c (MPa)", 14.0, 85.0, 27.6, 1.0, key="fc_MPa", dual=dual_stress_MPa
+    fc_MPa = si_int_input(
+        "f'c (MPa)", 14, 85, 28, 1, key="fc_MPa", dual=dual_stress_MPa
     )
     ec_code = st.selectbox("Ec formula", ["ACI318", "Eurocode2", "NZS3101"], key="ec")
+    st.caption("Decimal exception: modular ratio override.")
     n_ov = st.number_input("n = Es/Ec override (0=auto)", 0.0, 20.0, 0.0, 0.1, key="nov")
+
+    orient_opts = ["none", "perpendicular", "parallel"]
+    default_orient = entry.get("orientation", "none")
+    if "orient" not in st.session_state:
+        st.session_state["orient"] = default_orient
+    orient = st.selectbox(
+        "Deck orientation",
+        orient_opts,
+        key="orient",
+        help="ComFlor® 51+ is re-entrant — perpendicular is typical over beams; parallel also allowed.",
+    )
+    if entry.get("profile_type") == "re-entrant":
+        st.caption("ComFlor® 51+ is a **re-entrant** profile — confirm orientation for Rg/Rp.")
+
+    hr_mm = si_int_input(
+        "Rib / deck depth hr (mm)",
+        0,
+        300,
+        int(round(cat_hr)),
+        1,
+        key="hr_mm",
+        dual=dual_length_mm,
+        help="Auto-filled from ComFlor® catalog; edit for manual override.",
+    )
+    wr_mm = si_int_input(
+        "Avg rib/trough width wr (mm)",
+        0,
+        600,
+        int(round(cat_wr)),
+        1,
+        key="wr_mm",
+        dual=dual_length_mm,
+        help="Approximate average trough width for AISC I8; auto-filled from catalog.",
+    )
+    if entry.get("pitch_mm") or entry.get("cover_width_mm"):
+        gauges = entry.get("gauges_mm") or []
+        gtxt = ", ".join(str(g) for g in gauges) if gauges else "—"
+        st.caption(
+            f"{entry.get('name', dkey)}: pitch {entry.get('pitch_mm', 0)} mm, "
+            f"cover {entry.get('cover_width_mm', 0)} mm, gauges [{gtxt}] mm. "
+            f"Source: {entry.get('source', 'ComFlor®')}."
+        )
+
     orient_map = {
         "none": DeckOrientation.NONE,
         "perpendicular": DeckOrientation.PERPENDICULAR,
         "parallel": DeckOrientation.PARALLEL,
     }
-    default_orient = decks[dkey].get("orientation", "none")
-    orient = st.selectbox(
-        "Deck orientation",
-        ["none", "perpendicular", "parallel"],
-        index=["none", "perpendicular", "parallel"].index(default_orient),
-        key="orient",
-    )
     slab = SlabConfig(
-        t_solid_mm=t_solid_mm,
-        hr_mm=float(decks[dkey]["hr_in"]) * 25.4,
-        wr_mm=float(decks[dkey]["wr_in"]) * 25.4,
+        t_solid_mm=float(t_solid_mm),
+        hr_mm=float(hr_mm),
+        wr_mm=float(wr_mm),
         orientation=orient_map[orient],
-        fc_MPa=fc_MPa,
+        fc_MPa=float(fc_MPa),
         catalog_key=dkey,
     )
     concrete = ConcreteMaterial(fc_MPa=slab.fc_MPa, Ec_code=EcCode(ec_code))
     st.write(f"Ec ≈ {concrete.Ec_MPa:.0f} MPa; n_auto ≈ {steel.Es_MPa/concrete.Ec_MPa:.2f}")
 
     st.subheader("Studs")
-    ds_mm = si_number_input(
-        "Stud diameter (mm)", 12.0, 25.0, 19.0, 1.0, key="ds_mm", dual=dual_length_mm
+    ds_mm = si_int_input(
+        "Stud diameter (mm)", 12, 25, 19, 1, key="ds_mm", dual=dual_length_mm
     )
-    Fu_stud = si_number_input(
-        "Stud Fu (MPa)", 350.0, 550.0, 448.2, 5.0, key="Fus_MPa", dual=dual_stress_MPa
+    Fu_stud = si_int_input(
+        "Stud Fu (MPa)", 350, 550, 450, 1, key="Fus_MPa", dual=dual_stress_MPa
     )
     use_four = st.checkbox("Four independent stud-spacing zones", False, key="fourz")
     stud_zones = None
     target_ratio = None
     n_studs = None
     if use_four:
-        st.caption("Zone ratios of span; spacing in mm; rows = studs across the flange.")
-        default_s = [305.0, 305.0, 305.0, 305.0]
+        st.caption(
+            "Zone ratios of span (decimal exception); spacing in whole mm; "
+            "rows = studs across the flange."
+        )
+        default_s = [305, 305, 305, 305]
         default_r = [(0.0, 0.25), (0.25, 0.50), (0.50, 0.75), (0.75, 1.0)]
         names = ["Z1 left end", "Z2 left mid", "Z3 right mid", "Z4 right end"]
         stud_zones = []
@@ -260,17 +330,17 @@ with tab_in:
             a = zc1.number_input(f"{name} start x/L", 0.0, 1.0, default_r[i][0], 0.05, key=f"zs{i}")
             b = zc2.number_input(f"{name} end x/L", 0.0, 1.0, default_r[i][1], 0.05, key=f"ze{i}")
             with zc3:
-                s_mm = si_number_input(
+                s_mm = si_int_input(
                     f"{name} spacing (mm)",
-                    50.0,
-                    1200.0,
+                    50,
+                    1200,
                     default_s[i],
-                    10.0,
+                    1,
                     key=f"zsp_mm{i}",
                     dual=dual_length_mm,
                 )
             rows = zc4.number_input(f"{name} rows", 1, 4, 1, key=f"zr{i}")
-            stud_zones.append(StudZone(name, a, b, s_mm, int(rows)))
+            stud_zones.append(StudZone(name, a, b, float(s_mm), int(rows)))
     else:
         comp_mode = st.radio(
             "Shear connection",
@@ -289,12 +359,12 @@ with tab_in:
         False,
         key="resid",
     )
-    Lb_neg_mm = si_number_input(
+    Lb_neg_mm = si_int_input(
         "Hogging unbraced length Lb− (mm, 0=full span)",
-        0.0,
-        36500.0,
-        0.0,
-        50.0,
+        0,
+        36500,
+        0,
+        1,
         key="Lbneg_mm",
         dual=dual_length_mm,
     )
@@ -305,30 +375,30 @@ with tab_in:
     )
 
     st.subheader("Loads (service / nominal)")
-    w_SDL_kNpm = si_number_input(
+    w_SDL_kNpm = si_int_input(
         "Superimposed dead SDL (kN/m on beam)",
-        0.0,
-        30.0,
-        2.19,
-        0.1,
+        0,
+        30,
+        2,
+        1,
         key="sdl_kNpm",
         dual=dual_line_load_kNpm,
     )
-    w_LL_kNpm = si_number_input(
+    w_LL_kNpm = si_int_input(
         "Live load L (kN/m on beam)",
-        0.0,
-        75.0,
-        7.3,
-        0.1,
+        0,
+        75,
+        7,
+        1,
         key="ll_kNpm",
         dual=dual_line_load_kNpm,
     )
-    w_C_kNpm = si_number_input(
+    w_C_kNpm = si_int_input(
         "Construction live C (kN/m)",
-        0.0,
-        30.0,
-        1.46,
-        0.1,
+        0,
+        30,
+        1,
+        1,
         key="clive_kNpm",
         dual=dual_line_load_kNpm,
     )
@@ -337,25 +407,28 @@ with tab_in:
     for i in range(int(n_pts)):
         pc1, pc2 = st.columns(2)
         with pc1:
-            P_kN = si_number_input(
-                f"P{i+1} (kN)", 0.0, 2200.0, 44.5, 1.0, key=f"P_kN{i}", dual=dual_force_kN
+            P_kN = si_int_input(
+                f"P{i+1} (kN)", 0, 2200, 45, 1, key=f"P_kN{i}", dual=dual_force_kN
             )
+        st.caption("Decimal exception: location ratio x/L.")
         ratio = pc2.number_input(f"Location ratio x/L {i+1}", 0.0, 1.0, 0.5, key=f"r{i}")
-        points_LL.append(PointLoad(P_kN=P_kN, location=ratio, spec=PointLoadSpec.RATIO))
+        points_LL.append(PointLoad(P_kN=float(P_kN), location=ratio, spec=PointLoadSpec.RATIO))
 
     st.subheader("Axial (Chapter H)")
-    Pu_kN = si_number_input(
+    Pu_kN = si_int_input(
         "Required axial Pr (kN, compression +ve; 0=flexure only)",
-        -9000.0,
-        9000.0,
-        0.0,
-        10.0,
+        -9000,
+        9000,
+        0,
+        1,
         key="Pu_kN",
         dual=dual_force_kN,
     )
+    st.caption("Decimal exception: effective length factor K.")
     Kfac = st.number_input("Effective length factor K (E3)", 0.5, 2.0, 1.0, 0.05, key="K")
 
     st.subheader("Custom combinations (up to 5)")
+    st.caption("Decimal exception: ASCE / custom load factors.")
     n_custom = st.number_input("Custom combos", 0, 5, 0, key="ncu")
     custom = []
     for i in range(int(n_custom)):
@@ -378,46 +451,46 @@ if run:
     ML = None
     MR = None
     if support != SupportType.SIMPLY_SUPPORTED and not use_fem:
-        ML = M_left_ov_kNm
-        MR = M_right_ov_kNm
+        ML = float(M_left_ov_kNm)
+        MR = float(M_right_ov_kNm)
     elif support != SupportType.SIMPLY_SUPPORTED:
         if abs(M_left_ov_kNm) > 1e-9:
-            ML = M_left_ov_kNm
+            ML = float(M_left_ov_kNm)
         if abs(M_right_ov_kNm) > 1e-9:
-            MR = M_right_ov_kNm
+            MR = float(M_right_ov_kNm)
 
     inp = DesignInputs(
-        L_mm=L_mm,
+        L_mm=float(L_mm),
         shape=shape,
         steel=steel,
         concrete=concrete,
         slab=slab,
         location=BeamLocation(location),
-        spacing_left_mm=sL_mm,
-        spacing_right_mm=sR_mm,
-        beff_override_mm=beff_ov if beff_ov > 0 else None,
+        spacing_left_mm=float(sL_mm),
+        spacing_right_mm=float(sR_mm),
+        beff_override_mm=float(beff_ov) if beff_ov > 0 else None,
         aisc_edition=AISCEdition.AISC360_22 if aisc_ed.endswith("22") else AISCEdition.AISC360_16,
         asce_edition=ASCEEdition.ASCE7_22 if asce_ed.endswith("22") else ASCEEdition.ASCE7_16,
-        stud=StudConfig(diameter_mm=ds_mm, Fu_stud_MPa=Fu_stud),
+        stud=StudConfig(diameter_mm=float(ds_mm), Fu_stud_MPa=float(Fu_stud)),
         n_studs_half_span=int(n_studs) if n_studs else None,
         target_composite_ratio=target_ratio,
         n_override=n_ov if n_ov > 0 else None,
-        w_SDL_kNpm=w_SDL_kNpm,
-        w_LL_kNpm=w_LL_kNpm,
-        w_construction_kNpm=w_C_kNpm,
+        w_SDL_kNpm=float(w_SDL_kNpm),
+        w_LL_kNpm=float(w_LL_kNpm),
+        w_construction_kNpm=float(w_C_kNpm),
         points_LL=points_LL,
         shored=shored,
         deck_braces_construction=deck_brace,
-        camber_mm=camber_mm,
+        camber_mm=float(camber_mm),
         deflection_limits=DeflectionLimits(),
         method=method,
         custom_combinations=custom,
         support=support,
         M_left_override_kNm=ML,
         M_right_override_kNm=MR,
-        Pu_kN=Pu_kN,
+        Pu_kN=float(Pu_kN),
         K_factor=Kfac,
-        Lb_neg_mm=Lb_neg_mm if Lb_neg_mm > 0 else None,
+        Lb_neg_mm=float(Lb_neg_mm) if Lb_neg_mm > 0 else None,
         include_residual_concrete_tension=residual,
         stud_zones=stud_zones,
     )

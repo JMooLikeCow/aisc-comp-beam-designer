@@ -42,7 +42,7 @@ P1 tests: continuous analysis (fixed-fixed / fixed-pinned), Chapter H smoke, wel
 composite_beam/     # typed library
 app/streamlit_app.py
 streamlit_app.py    # Streamlit Cloud entry (delegates to app/)
-data/               # w_shapes.csv, steel_grades.json, deck_catalog.json
+data/               # full AISC W-shapes CSV, ComFlor® deck_catalog.json, steel_grades.json
 tests/
 .streamlit/config.toml
 ```
@@ -55,9 +55,9 @@ tests/
 | Fixed-fixed and fixed-pinned continuous analysis; variable end moments; UDL + points | Done (P1) |
 | ASCE 7-16 / 7-22 LRFD (+ ASD) gravity combos + ≤5 custom | Done |
 | Construction combos separate from occupancy | Done |
-| W-shape CSV + custom I-section + **custom welded box** | Done |
+| Full AISC W-shape CSV (~283) + custom I-section + **custom welded box** | Done |
 | Steel grades A992 / A572-50 / A36 (thickness-aware Fy) | Done |
-| Solid slab / metal deck catalog + manual; Ec ACI / EC2 / NZS stubs | Done |
+| Solid slab / **Tata Steel ComFlor®** deck catalog + manual; Ec ACI / EC2 / NZS stubs | Done |
 | \(n=E_s/E_c\) auto + override | Done |
 | Effective width AISC I2.1a interior & edge; 16 vs 22 flags; override | Done |
 | Full & partial composite; \(\sum Q_n/C\); studs from target ratio or check layout | Done |
@@ -74,6 +74,11 @@ tests/
 | Design check DCRs + up to 10 passing W shapes lightest→heaviest | Done |
 | **Excel export** from Summary (openpyxl) | Done (P1) |
 | **Graphics**: M/V diagrams, H interaction, stud layout (plotly) | Done (P1) |
+
+## Data sources
+
+- **W-shapes:** AISC Shapes Database v15.0 CSV extract ([ambaker1/aisc-csv](https://github.com/ambaker1/aisc-csv)); see `data/README.md`.
+- **Deck catalog:** Tata Steel **ComFlor®** composite floor decking range (overview / technical manual).
 
 ## Limitations (honest — not hidden)
 

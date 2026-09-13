@@ -1,8 +1,13 @@
-"""Streamlit helpers: SI number_input with live US customary caption."""
+"""Streamlit helpers: SI number_input with live US customary caption.
+
+Dimensional / force / stress / moment / line-load inputs are whole numbers
+(integer widgets). Exceptions kept as decimals: dimensionless ratios (x/L),
+K factor, modular ratio n override, and ASCE load factors.
+"""
 
 from __future__ import annotations
 
-from typing import Callable, Optional
+from typing import Callable, Optional, Union
 
 import streamlit as st
 
@@ -20,7 +25,10 @@ def si_number_input(
     format: Optional[str] = None,
     disabled: bool = False,
 ) -> float:
-    """number_input in SI units with a live dual-unit caption underneath."""
+    """number_input in SI units with a live dual-unit caption underneath.
+
+    Prefer :func:`si_int_input` for dimensional / force / stress quantities.
+    """
     kwargs = {
         "min_value": min_value,
         "max_value": max_value,
@@ -39,7 +47,7 @@ def si_number_input(
     return float(v)
 
 
-def si_number_input_int(
+def si_int_input(
     label: str,
     min_value: int,
     max_value: int,
@@ -47,18 +55,24 @@ def si_number_input_int(
     step: int = 1,
     *,
     key: str,
-    dual: Optional[Callable[[int], str]] = None,
+    dual: Optional[Callable[[Union[int, float]], str]] = None,
     help: Optional[str] = None,
 ) -> int:
+    """Integer SI number_input (step=1, format=%d) with optional dual US caption."""
     v = st.number_input(
         label,
-        min_value=min_value,
-        max_value=max_value,
-        value=value,
-        step=step,
+        min_value=int(min_value),
+        max_value=int(max_value),
+        value=int(value),
+        step=int(step),
+        format="%d",
         key=key,
         help=help,
     )
     if dual is not None:
         st.caption(dual(int(v)))
     return int(v)
+
+
+# Backwards-compatible alias
+si_number_input_int = si_int_input

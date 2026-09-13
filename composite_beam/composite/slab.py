@@ -57,25 +57,52 @@ def load_deck_catalog(path: Optional[Path] = None) -> dict:
         return json.load(f)
 
 
+def catalog_hr_wr_mm(entry: dict) -> tuple[float, float]:
+    """Prefer SI catalog fields; fall back to legacy inch keys."""
+    if "hr_mm" in entry:
+        hr_mm = float(entry["hr_mm"])
+    else:
+        hr_mm = float(entry.get("hr_in", 0.0)) * MM_PER_IN
+    if "wr_mm" in entry:
+        wr_mm = float(entry["wr_mm"])
+    else:
+        wr_mm = float(entry.get("wr_in", 0.0)) * MM_PER_IN
+    return hr_mm, wr_mm
+
+
+def catalog_weight_kNpm2(entry: dict) -> float:
+    if "weight_kNpm2" in entry:
+        return float(entry.get("weight_kNpm2") or 0.0)
+    # Legacy psf → kPa ≈ kN/m²
+    return float(entry.get("weight_psf", 0.0)) * 0.04788025898
+
+
 def slab_from_catalog(
     key: str,
     t_solid_mm: float,
     fc_MPa: float,
     beff_mm: float = 0.0,
     orientation_override: Optional[DeckOrientation] = None,
+    hr_mm_override: Optional[float] = None,
+    wr_mm_override: Optional[float] = None,
 ) -> SlabConfig:
     cat = load_deck_catalog()
     if key not in cat:
         raise KeyError(f"Deck catalog key not found: {key}")
     e = cat[key]
     orient = orientation_override or DeckOrientation(e.get("orientation", "none"))
+    hr_mm, wr_mm = catalog_hr_wr_mm(e)
+    if hr_mm_override is not None:
+        hr_mm = float(hr_mm_override)
+    if wr_mm_override is not None:
+        wr_mm = float(wr_mm_override)
     return SlabConfig(
         t_solid_mm=t_solid_mm,
-        hr_mm=float(e["hr_in"]) * MM_PER_IN,
-        wr_mm=float(e["wr_in"]) * MM_PER_IN,
+        hr_mm=hr_mm,
+        wr_mm=wr_mm,
         orientation=orient,
         fc_MPa=fc_MPa,
         beff_mm=beff_mm,
         catalog_key=key,
-        weight_kNpm2=float(e.get("weight_psf", 0.0)) * 0.04788025898,  # psf → kPa ≈ kN/m²
+        weight_kNpm2=catalog_weight_kNpm2(e),
     )

@@ -8,7 +8,7 @@ from composite_beam.composite.effective_width import (
 )
 from composite_beam.composite.punching import PunchingResult, punching_one_stud, punching_with_group
 from composite_beam.composite.shear_connection import ShearConnectionResult, shear_connection
-from composite_beam.composite.slab import DeckOrientation, SlabConfig, load_deck_catalog, slab_from_catalog
+from composite_beam.composite.slab import DeckOrientation, SlabConfig, catalog_hr_wr_mm, load_deck_catalog, slab_from_catalog
 from composite_beam.composite.stud_layout import (
     StudLayoutResult,
     StudZone,
@@ -26,6 +26,7 @@ __all__ = [
     "shear_connection",
     "DeckOrientation",
     "SlabConfig",
+    "catalog_hr_wr_mm",
     "load_deck_catalog",
     "slab_from_catalog",
     "StudConfig",
