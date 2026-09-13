@@ -71,6 +71,13 @@ def summary_lines(result: "DesignResult") -> list[str]:
             f"(Pr/Pc={r.interaction.ratio_P:.3f}, Mr/Mc={r.interaction.ratio_Mx:.3f}; "
             f"Pr={dual_force_kN(r.interaction.Pr_kN)})"
         )
+    if getattr(r, "shear_strength", None) is not None:
+        ss = r.shear_strength
+        lines.append(
+            f"Shear Ch.G ({ss.section_ref}): Vu={dual_force_kN(ss.Vu_kN)}; "
+            f"φVn={dual_force_kN(ss.phiVn_kN)}; DCR={ss.DCR:.3f} "
+            f"{'PASS' if ss.passes else 'FAIL'}"
+        )
     if r.punching is not None:
         lines.append(
             f"Punching φVc={dual_force_kN(r.punching.phiVc_kN)}; "
@@ -78,14 +85,14 @@ def summary_lines(result: "DesignResult") -> list[str]:
             f"DCR={r.punching.DCR:.3f} {'PASS' if r.punching.passes else 'FAIL'}"
         )
     lines += [
-        f"ΔLL={dual_length_mm(r.deflection.delta_LL_mm, precision=1)} "
-        f"(limit {dual_length_mm(r.deflection.delta_LL_limit_mm, precision=1)}) "
-        f"{'OK' if r.deflection.LL_OK else 'NG'}",
-        f"Δtotal={dual_length_mm(r.deflection.delta_total_mm, precision=1)} "
-        f"(limit {dual_length_mm(r.deflection.delta_total_limit_mm, precision=1)}) "
-        f"{'OK' if r.deflection.total_OK else 'NG'}",
-        f"Camber: {dual_length_mm(r.deflection.camber_mm, precision=1)} "
-        f"(suggest {dual_length_mm(r.deflection.camber_suggested_mm, precision=1)})"
+        f"ΔLL={dual_length_mm(r.deflection.delta_LL_mm, precision=2)} "
+        f"(limit {dual_length_mm(r.deflection.delta_LL_limit_mm, precision=2)}) "
+        f"{'PASS' if r.deflection.LL_OK else 'FAIL'}",
+        f"Δtotal={dual_length_mm(r.deflection.delta_total_mm, precision=2)} "
+        f"(limit {dual_length_mm(r.deflection.delta_total_limit_mm, precision=2)}) "
+        f"{'PASS' if r.deflection.total_OK else 'FAIL'}",
+        f"Camber: {dual_length_mm(r.deflection.camber_mm, precision=2)} "
+        f"(suggest {dual_length_mm(r.deflection.camber_suggested_mm, precision=2)})"
         + (" ⚠ >100% DL Δ" if r.deflection.camber_warn else ""),
         f"OVERALL: {'PASS' if r.overall_pass else 'FAIL'}",
     ]

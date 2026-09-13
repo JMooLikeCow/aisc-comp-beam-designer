@@ -52,6 +52,11 @@ def _kpi_cards(result: "DesignResult") -> str:
             result.pass_construction,
         ),
         (
+            "Shear G",
+            result.shear_strength.DCR if getattr(result, "shear_strength", None) is not None else 0.0,
+            getattr(result, "pass_shear", True),
+        ),
+        (
             "Deflection",
             (
                 max(
@@ -118,20 +123,32 @@ def _capacity_rows(result: "DesignResult") -> list[tuple[str, str, str, str, boo
                 result.pass_construction,
             )
         )
-    rows.append(
-        (
-            "Shear demand Vu (Chapter G φVn not checked)",
-            dual_force_kN(result.Vu_kN),
-            "—",
-            "—",
-            True,
+    if getattr(result, "shear_strength", None) is not None:
+        ss = result.shear_strength
+        rows.append(
+            (
+                f"Web shear Ch.G {ss.section_ref}  φVn / Vu",
+                dual_force_kN(ss.Vu_kN),
+                dual_force_kN(ss.phiVn_kN),
+                f"{ss.DCR:.3f}",
+                ss.passes,
+            )
         )
-    )
+    else:
+        rows.append(
+            (
+                "Shear demand Vu (Chapter G φVn not checked)",
+                dual_force_kN(result.Vu_kN),
+                "—",
+                "—",
+                True,
+            )
+        )
     rows.append(
         (
             "Live deflection ΔLL",
-            dual_length_mm(result.deflection.delta_LL_mm, precision=1),
-            dual_length_mm(result.deflection.delta_LL_limit_mm, precision=1),
+            dual_length_mm(result.deflection.delta_LL_mm, precision=2),
+            dual_length_mm(result.deflection.delta_LL_limit_mm, precision=2),
             (
                 f"{result.deflection.delta_LL_mm / result.deflection.delta_LL_limit_mm:.3f}"
                 if result.deflection.delta_LL_limit_mm
@@ -143,8 +160,8 @@ def _capacity_rows(result: "DesignResult") -> list[tuple[str, str, str, str, boo
     rows.append(
         (
             "Total deflection Δtot",
-            dual_length_mm(result.deflection.delta_total_mm, precision=1),
-            dual_length_mm(result.deflection.delta_total_limit_mm, precision=1),
+            dual_length_mm(result.deflection.delta_total_mm, precision=2),
+            dual_length_mm(result.deflection.delta_total_limit_mm, precision=2),
             (
                 f"{result.deflection.delta_total_mm / result.deflection.delta_total_limit_mm:.3f}"
                 if result.deflection.delta_total_limit_mm
@@ -389,7 +406,7 @@ def result_to_html(
   <h2>Headline notes</h2>
   <ul>{notes}</ul>
   <footer>AISC Comp Beam Designer — one-page results sheet. SI primary; US customary in brackets.
-  Vu is demand only (no Chapter G φVn). E/W envelope only when those factors and loads are present.</footer>
+  Steel web shear per AISC Chapter G; stud longitudinal shear and ACI punching are separate. E/W envelope only when those factors and loads are present.</footer>
 </body>
 </html>
 """

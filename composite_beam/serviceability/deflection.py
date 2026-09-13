@@ -84,7 +84,11 @@ def Ieff_partial(I_full_mm4: float, I_s_mm4: float, ratio: float) -> float:
 
 
 def _EI_kNmm2(I_mm4: float, E_MPa: float = ES_MPA) -> float:
-    # E in MPa = N/mm²; EI in N·mm² = E * I; in kN·mm² = E*I/1000
+    """EI in kN·mm². E [MPa=N/mm²]·I [mm⁴] = N·mm²; ÷1000 → kN·mm².
+
+    Paired with deflection_* helpers that convert back via EI_Nmm2 = EI_kNmm2 * 1000
+    and take w in kN/m as N/mm (1 kN/m ≡ 1 N/mm) — do not divide w by 1000.
+    """
     return E_MPa * I_mm4 / 1000.0
 
 

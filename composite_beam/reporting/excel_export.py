@@ -91,6 +91,17 @@ def result_to_xlsx_bytes(result: "DesignResult") -> bytes:
                 result.interaction.passes,
             )
         )
+    if getattr(result, "shear_strength", None) is not None:
+        ss = result.shear_strength
+        rows.append(
+            (
+                f"Web shear Ch.G {ss.section_ref}",
+                ss.Vu_kN,
+                ss.phiVn_kN,
+                ss.DCR,
+                ss.passes,
+            )
+        )
     if result.punching is not None:
         rows.append(
             (
@@ -112,10 +123,26 @@ def result_to_xlsx_bytes(result: "DesignResult") -> bytes:
             result.deflection.LL_OK,
         )
     )
+    rows.append(
+        (
+            "Total deflection",
+            result.deflection.delta_total_mm,
+            result.deflection.delta_total_limit_mm,
+            result.deflection.delta_total_mm / result.deflection.delta_total_limit_mm
+            if result.deflection.delta_total_limit_mm
+            else 0.0,
+            result.deflection.total_OK,
+        )
+    )
     def _fmt_check(name: str, dem: float, cap: float) -> tuple[str, str]:
-        if "deflection" in name.lower() or "Live deflection" in name:
-            return dual_length_mm(float(dem), precision=1), dual_length_mm(float(cap), precision=1)
-        if "punching" in name.lower() or name.startswith("Ch.H"):
+        if "deflection" in name.lower():
+            return dual_length_mm(float(dem), precision=2), dual_length_mm(float(cap), precision=2)
+        if (
+            "punching" in name.lower()
+            or name.startswith("Ch.H")
+            or "shear" in name.lower()
+            or "Web shear" in name
+        ):
             return dual_force_kN(float(dem)), dual_force_kN(float(cap))
         return dual_moment_kNm(float(dem)), dual_moment_kNm(float(cap))
 

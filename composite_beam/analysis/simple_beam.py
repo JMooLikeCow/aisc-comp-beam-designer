@@ -119,11 +119,9 @@ def analyze_simply_supported(
 
 def deflection_udl_simply_supported(w_kNpm: float, L_mm: float, EI_kNmm2: float) -> float:
     """Δ_mid = 5 w L^4 / (384 EI). Returns mm. w in kN/m, L in mm, EI in kN·mm²."""
-    L_m = L_mm / 1000.0
-    # Work in N, mm: w_N_per_mm = w_kNpm / 1000  (kN/m = N/mm)
-    w_Nmm = w_kNpm / 1000.0  # N/mm
-    # EI_kNmm2 = EI in kN·mm²; convert to N·mm² = *1000
-    EI = EI_kNmm2 * 1000.0
+    # Consistent N–mm: 1 kN/m = 1 N/mm; EI_kNmm2 → N·mm² = *1000
+    w_Nmm = w_kNpm  # N/mm  (1 kN/m ≡ 1 N/mm)
+    EI = EI_kNmm2 * 1000.0  # N·mm²
     delta = 5.0 * w_Nmm * (L_mm**4) / (384.0 * EI)
     return delta  # mm
 

@@ -123,23 +123,35 @@ def _capacity_records(result: "DesignResult") -> list[dict]:
                 "Status": "PASS" if result.pass_construction else "FAIL",
             }
         )
-    rows.append(
-        {
-            "Check": "Shear demand Vu (Ch. G φVn not checked)",
-            "Demand": dual_force_kN(result.Vu_kN),
-            "Capacity": "—",
-            "DCR": "—",
-            "Status": "note",
-        }
-    )
+    if getattr(result, "shear_strength", None) is not None:
+        ss = result.shear_strength
+        rows.append(
+            {
+                "Check": f"Web shear Ch.G {ss.section_ref}  φVn / Vu",
+                "Demand": dual_force_kN(ss.Vu_kN),
+                "Capacity": dual_force_kN(ss.phiVn_kN),
+                "DCR": round(ss.DCR, 3),
+                "Status": "PASS" if ss.passes else "FAIL",
+            }
+        )
+    else:
+        rows.append(
+            {
+                "Check": "Shear demand Vu (Ch. G φVn not checked)",
+                "Demand": dual_force_kN(result.Vu_kN),
+                "Capacity": "—",
+                "DCR": "—",
+                "Status": "note",
+            }
+        )
     d = result.deflection
     ll_dcr = d.delta_LL_mm / d.delta_LL_limit_mm if d.delta_LL_limit_mm else 0.0
     tot_dcr = d.delta_total_mm / d.delta_total_limit_mm if d.delta_total_limit_mm else 0.0
     rows.append(
         {
             "Check": "Live deflection ΔLL",
-            "Demand": dual_length_mm(d.delta_LL_mm, precision=1),
-            "Capacity": dual_length_mm(d.delta_LL_limit_mm, precision=1),
+            "Demand": dual_length_mm(d.delta_LL_mm, precision=2),
+            "Capacity": dual_length_mm(d.delta_LL_limit_mm, precision=2),
             "DCR": round(ll_dcr, 3),
             "Status": "PASS" if d.LL_OK else "FAIL",
         }
@@ -147,8 +159,8 @@ def _capacity_records(result: "DesignResult") -> list[dict]:
     rows.append(
         {
             "Check": "Total deflection Δtot",
-            "Demand": dual_length_mm(d.delta_total_mm, precision=1),
-            "Capacity": dual_length_mm(d.delta_total_limit_mm, precision=1),
+            "Demand": dual_length_mm(d.delta_total_mm, precision=2),
+            "Capacity": dual_length_mm(d.delta_total_limit_mm, precision=2),
             "DCR": round(tot_dcr, 3),
             "Status": "PASS" if d.total_OK else "FAIL",
         }
@@ -307,6 +319,11 @@ def render_results_dashboard(
             "Construction",
             result.construction_LTB.DCR if result.construction_LTB else 0.0,
             result.pass_construction,
+        ),
+        (
+            "Shear G",
+            result.shear_strength.DCR if getattr(result, "shear_strength", None) is not None else 0.0,
+            getattr(result, "pass_shear", True),
         ),
         ("Deflection", _defl_dcr(result), result.pass_deflection),
         ("Hogging −", result.DCR_neg, result.pass_neg),

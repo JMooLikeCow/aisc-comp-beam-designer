@@ -51,6 +51,7 @@ from composite_beam.strength.interaction import (
 from composite_beam.strength.ltb import LTBResult, construction_LTB
 from composite_beam.strength.negative_moment import NegativeMomentResult, negative_flexural_strength
 from composite_beam.strength.positive_moment import PositiveMomentResult, positive_flexural_strength
+from composite_beam.strength.shear import ShearStrengthResult, web_shear_strength
 from composite_beam.units import ES_MPA
 
 
@@ -161,6 +162,8 @@ class DesignResult:
     punching: Optional[PunchingResult] = None
     pass_punching: bool = True
     cumulative: Optional[CumulativeCompositeResult] = None
+    shear_strength: Optional[ShearStrengthResult] = None
+    pass_shear: bool = True
     # Geometry retained for cross-section stress viewer / reports
     shape: Optional[WShape] = None
     slab: Optional[SlabConfig] = None
@@ -337,8 +340,9 @@ class DesignEngine:
                 f"Mu−={diag.M_min_kNm:.2f} kN·m, Vu={diag.V_max_kN:.2f} kN"
             )
             if diag.M_max_kNm > Mu:
-                Mu, Vu = diag.M_max_kNm, diag.V_max_kN
+                Mu = diag.M_max_kNm
                 gov_diag = diag
+            Vu = max(Vu, diag.V_max_kN)
             if diag.M_min_kNm < Mu_neg:
                 Mu_neg = diag.M_min_kNm
                 if gov_diag is None:
@@ -547,6 +551,16 @@ class DesignEngine:
         )
         pass_punch = punch.passes
 
+        # Chapter G steel web shear (separate from studs / ACI punching)
+        shear_str = web_shear_strength(
+            inp.shape,
+            inp.steel.Fy_MPa,
+            Vu,
+            method=inp.method,
+            E_MPa=inp.steel.Es_MPa,
+        )
+        pass_shear = shear_str.passes
+
         # Deflections
         delf = compute_deflections(
             L_mm=inp.L_mm,
@@ -594,7 +608,7 @@ class DesignEngine:
         pass_flex = DCR_flex <= 1.0
         pass_c = ltb.passes
         pass_d = delf.LL_OK and delf.total_OK
-        overall = pass_flex and pass_c and pass_d and pass_neg
+        overall = pass_flex and pass_c and pass_d and pass_neg and pass_shear
         if abs(inp.Pu_kN) > 0.01:
             overall = overall and pass_inter
         # Punching is reported and included in overall (slab check)
@@ -637,6 +651,7 @@ class DesignEngine:
         if inter is not None:
             detailed.extend(inter.notes)
         detailed.extend(punch.notes)
+        detailed.extend(shear_str.notes)
 
         passing: list[PassingShape] = []
         if search_passing:
@@ -687,6 +702,8 @@ class DesignEngine:
             punching=punch,
             pass_punching=pass_punch,
             cumulative=cumulative,
+            shear_strength=shear_str,
+            pass_shear=pass_shear,
             shape=inp.shape,
             slab=slab,
             Fy_MPa=inp.steel.Fy_MPa,
