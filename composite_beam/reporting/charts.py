@@ -1,4 +1,4 @@
-"""Plotly figures for the Summary tab: M/V diagrams, H interaction, stud layout."""
+"""Plotly figures for the Summary tab: M/V, H interaction, studs, cumulative action."""
 
 from __future__ import annotations
 
@@ -153,5 +153,82 @@ def stud_layout_figure(result: "DesignResult"):
         template="plotly_white",
         height=320,
         margin=dict(l=50, r=20, t=40, b=40),
+    )
+    return fig
+
+
+def cumulative_action_figure(result: "DesignResult"):
+    """Provided ΣQn vs required cumulative force along the span (dual-unit axes)."""
+    go = _go()
+    cum = getattr(result, "cumulative", None)
+    if cum is None or len(cum.x_mm) == 0:
+        return None
+
+    x_m = cum.x_mm / 1000.0
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=x_m,
+            y=cum.F_req_kN,
+            mode="lines",
+            name="F_req (moment-prop.)",
+            line=dict(color="#c0392b", width=2, dash="dash"),
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=x_m,
+            y=cum.SumQn_prov_kN,
+            mode="lines",
+            name="ΣQn provided",
+            line=dict(color="#1f4e79", width=2.5),
+            fill="tozeroy",
+            fillcolor="rgba(31,78,121,0.12)",
+        )
+    )
+    # C_full reference
+    fig.add_hline(
+        y=cum.C_full_kN,
+        line=dict(color="#888", width=1, dash="dot"),
+        annotation_text=f"C_full = {cum.C_full_kN:.0f} kN",
+        annotation_position="top left",
+    )
+    # Mark max-M
+    fig.add_vline(
+        x=cum.x_maxM_mm / 1000.0,
+        line=dict(color="#e09f3e", width=1, dash="dot"),
+        annotation_text="max +M",
+        annotation_position="top",
+    )
+
+    fig.update_layout(
+        title=(
+            "Cumulative composite action — ΣQn provided vs F_req along span "
+            "(AISC I3.2d / I8 detailing)"
+        ),
+        xaxis_title="x (m) [ft]",
+        yaxis_title="Force (kN) [kip]",
+        template="plotly_white",
+        height=380,
+        margin=dict(l=50, r=20, t=50, b=70),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0),
+    )
+    fig.add_annotation(
+        text=(
+            f"Origins: left={cum.origin_left_mm/1000:.2f} m, "
+            f"right={cum.origin_right_mm/1000:.2f} m · "
+            "F_req = C·M(x)/M_max from nearer origin · "
+            "not a substitute for half-span stud count"
+        ),
+        xref="paper",
+        yref="paper",
+        x=0.0,
+        y=-0.22,
+        showarrow=False,
+        font=dict(size=11, color="#555"),
+        align="left",
+    )
+    fig.update_traces(
+        hovertemplate="x=%{x:.3f} m<br>F=%{y:.1f} kN<extra>%{fullData.name}</extra>"
     )
     return fig

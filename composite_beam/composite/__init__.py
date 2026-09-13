@@ -1,4 +1,4 @@
-"""Composite action: effective width, slab, studs, shear connection, punching."""
+"""Composite action: effective width, slab, studs, shear connection, punching, cumulative."""
 
 from composite_beam.composite.effective_width import (
     AISCEdition,
@@ -16,6 +16,11 @@ from composite_beam.composite.stud_layout import (
     layout_studs,
 )
 from composite_beam.composite.studs import StudConfig, StudGoverning, StudQnResult, stud_Qn
+from composite_beam.composite.cumulative_action import (
+    CumulativeCompositeResult,
+    cumulative_composite_action,
+    synthesize_uniform_stud_positions,
+)
 
 __all__ = [
     "AISCEdition",
@@ -40,4 +45,7 @@ __all__ = [
     "PunchingResult",
     "punching_one_stud",
     "punching_with_group",
+    "CumulativeCompositeResult",
+    "cumulative_composite_action",
+    "synthesize_uniform_stud_positions",
 ]

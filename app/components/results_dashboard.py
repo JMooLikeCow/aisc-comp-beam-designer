@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from composite_beam.reporting.charts import (
+    cumulative_action_figure,
     interaction_figure,
     moment_shear_figures,
     stud_layout_figure,
@@ -219,6 +220,7 @@ def render_results_dashboard(
     figs = moment_shear_figures(result)
     fig_h = interaction_figure(result)
     fig_s = stud_layout_figure(result)
+    fig_c = cumulative_action_figure(result)
     r1c1, r1c2 = st.columns(2)
     with r1c1:
         if figs:
@@ -241,6 +243,18 @@ def render_results_dashboard(
             st.plotly_chart(fig_s, use_container_width=True)
         else:
             st.caption("Enable four-zone stud spacing on Input to plot the stud layout.")
+    if fig_c is not None:
+        st.plotly_chart(fig_c, use_container_width=True)
+        cum = result.cumulative
+        st.caption(
+            f"Accumulation origins: left = {cum.origin_left_mm/1000:.2f} m, "
+            f"right = {cum.origin_right_mm/1000:.2f} m "
+            f"(supports or contraflexure). F_req uses moment-proportional "
+            f"C·M(x)/M_max toward max +M (AISC I3.2d / I8 detailing). "
+            f"α = ΣQn/C_full. Not a substitute for the discrete half-span stud count."
+        )
+    else:
+        st.caption("Cumulative composite-action plot unavailable (no governing diagram).")
 
     st.subheader("Capacity vs demand  (SI [US])")
     st.dataframe(_capacity_records(result), use_container_width=True, hide_index=True)

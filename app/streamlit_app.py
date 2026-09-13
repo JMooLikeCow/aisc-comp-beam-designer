@@ -458,3 +458,28 @@ with tab_det:
         st.markdown("Calculations cite **AISC 360** section numbers and edition flags.")
         for line in detailed_lines(res):
             st.text(line)
+        if getattr(res, "cumulative", None) is not None:
+            st.subheader("Cumulative composite action stations")
+            cum = res.cumulative
+            st.caption(
+                f"Origins: left = {cum.origin_left_mm/1000:.2f} m, "
+                f"right = {cum.origin_right_mm/1000:.2f} m · "
+                "F_req = C·M(x)/M_max (moment-proportional) from nearer origin · "
+                "α = ΣQn/C_full · AISC I3.2d / I8 detailing (not a substitute for half-span stud count)."
+            )
+            from composite_beam.units import dual_force_kN, dual_length_mm
+            st.dataframe(
+                [
+                    {
+                        "x": dual_length_mm(r["x_mm"]),
+                        "F_req": dual_force_kN(r["F_req_kN"]),
+                        "ΣQn_prov": dual_force_kN(r["SumQn_prov_kN"]),
+                        "α": round(r["alpha"], 3),
+                        "Shortfall": dual_force_kN(r["shortfall_kN"]),
+                        "Status": r["status"],
+                    }
+                    for r in cum.station_rows()
+                ],
+                use_container_width=True,
+                hide_index=True,
+            )

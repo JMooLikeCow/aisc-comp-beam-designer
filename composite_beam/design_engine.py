@@ -25,6 +25,10 @@ from composite_beam.composite.effective_width import (
     effective_width,
 )
 from composite_beam.composite.punching import PunchingResult, punching_with_group
+from composite_beam.composite.cumulative_action import (
+    CumulativeCompositeResult,
+    cumulative_composite_action,
+)
 from composite_beam.composite.shear_connection import ShearConnectionResult, shear_connection
 from composite_beam.composite.slab import DeckOrientation, SlabConfig
 from composite_beam.composite.stud_layout import StudLayoutResult, StudZone, layout_studs
@@ -155,6 +159,7 @@ class DesignResult:
     stud_layout: Optional[StudLayoutResult] = None
     punching: Optional[PunchingResult] = None
     pass_punching: bool = True
+    cumulative: Optional[CumulativeCompositeResult] = None
 
 
 def _slab_self_weight_kNpm(slab: SlabConfig, trib_mm: float, density_kNm3: float) -> float:
@@ -578,6 +583,22 @@ class DesignEngine:
         # Punching is reported and included in overall (slab check)
         overall = overall and pass_punch
 
+        # Cumulative composite action along span (detailing plot)
+        cumulative: Optional[CumulativeCompositeResult] = None
+        if gov_diag is not None:
+            cumulative = cumulative_composite_action(
+                inp.L_mm,
+                shear.C_full_kN,
+                stud_qn.Qn_kN,
+                x_mm_diag=gov_diag.x_mm,
+                M_kNmm=gov_diag.M_kNmm,
+                x_maxM_mm=gov_diag.M_max_x_mm,
+                stud_layout=stud_layout,
+                n_studs_half_span=shear.n_studs_provided,
+                n_rows=inp.n_studs_per_rib,
+            )
+            notes.extend(cumulative.notes)
+
         detailed = []
         detailed.extend(flags)
         detailed.extend(beff_res.notes)
@@ -642,6 +663,7 @@ class DesignEngine:
             stud_layout=stud_layout,
             punching=punch,
             pass_punching=pass_punch,
+            cumulative=cumulative,
         )
 
     def _search_passing(

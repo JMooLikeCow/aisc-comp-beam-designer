@@ -161,6 +161,39 @@ def result_to_xlsx_bytes(result: "DesignResult") -> bytes:
             ws5.cell(i, 2, p.zone_name)
             ws5.cell(i, 3, p.row)
 
+    # --- Cumulative composite action ---
+    wsC = wb.create_sheet("CumulativeAction")
+    _header(
+        wsC,
+        [
+            "x_mm",
+            "x_m",
+            "F_req_kN",
+            "F_req_kip",
+            "SumQn_prov_kN",
+            "SumQn_prov_kip",
+            "alpha",
+            "shortfall_kN",
+            "status",
+        ],
+    )
+    if result.cumulative is not None:
+        for i, row in enumerate(result.cumulative.station_rows(), start=2):
+            wsC.cell(i, 1, row["x_mm"])
+            wsC.cell(i, 2, row["x_mm"] / 1000.0)
+            wsC.cell(i, 3, row["F_req_kN"])
+            wsC.cell(i, 4, float(kn_to_kip(row["F_req_kN"])))
+            wsC.cell(i, 5, row["SumQn_prov_kN"])
+            wsC.cell(i, 6, float(kn_to_kip(row["SumQn_prov_kN"])))
+            wsC.cell(i, 7, round(row["alpha"], 4))
+            wsC.cell(i, 8, row["shortfall_kN"])
+            wsC.cell(i, 9, row["status"])
+        # notes below table
+        note_row = 3 + len(result.cumulative.station_rows())
+        wsC.cell(note_row, 1, "Notes (AISC I3.2d / I8 detailing)")
+        for j, n in enumerate(result.cumulative.notes):
+            wsC.cell(note_row + 1 + j, 1, n)
+
     # --- Passing shapes ---
     ws6 = wb.create_sheet("PassingShapes")
     _header(ws6, ["Shape", "W kg/m [plf]", "phiMn (kN·m [kip·ft])", "DCR_flex", "DCR_constr", "LL_OK"])

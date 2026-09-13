@@ -29,6 +29,14 @@ def summary_lines(result: "DesignResult") -> list[str]:
         f"Composite: {'FULL' if r.shear.is_full else f'PARTIAL ({r.shear.ratio*100:.0f}%)'}",
         f"ΣQn/C = {r.shear.ratio:.3f}; studs each side of max M = {r.shear.n_studs_provided}",
     ]
+    if getattr(r, "cumulative", None) is not None:
+        cum = r.cumulative
+        # nearest station to max M
+        best_i = min(range(len(cum.x_mm)), key=lambda i: abs(float(cum.x_mm[i]) - cum.x_maxM_mm))
+        lines.append(
+            f"Cumulative at max +M: ΣQn_prov={dual_force_kN(float(cum.SumQn_prov_kN[best_i]))}, "
+            f"α={float(cum.alpha[best_i]):.3f} (I3.2d/I8 detailing plot)"
+        )
     if r.stud_layout is not None:
         lines.append(
             f"Four-zone studs: total {r.stud_layout.n_total}; "
@@ -92,10 +100,39 @@ def summary_lines(result: "DesignResult") -> list[str]:
     return lines
 
 
+def cumulative_table_lines(result: "DesignResult") -> list[str]:
+    """Text table of cumulative composite-action stations."""
+    cum = getattr(result, "cumulative", None)
+    if cum is None:
+        return []
+    lines = [
+        "=== CUMULATIVE COMPOSITE ACTION (AISC I3.2d / I8 detailing) ===",
+        (
+            f"Origins: left={dual_length_mm(cum.origin_left_mm)} , "
+            f"right={dual_length_mm(cum.origin_right_mm)} ; "
+            f"x_maxM={dual_length_mm(cum.x_maxM_mm)} ; "
+            f"C_full={dual_force_kN(cum.C_full_kN)}"
+        ),
+        "F_req = C_full · M(x)/M_max (moment-proportional) from nearer origin toward max +M.",
+        "ΣQn_prov = sum of stud Qn between origin and station. α = ΣQn_prov / C_full.",
+        "Not a substitute for the discrete half-span stud count check.",
+        f"{'x (mm)':>12} {'F_req (kN)':>12} {'ΣQn_prov':>12} {'α':>8} {'short':>10} {'OK':>6}",
+    ]
+    for row in cum.station_rows():
+        # subsample for text: every station is fine if not huge; cap display density
+        lines.append(
+            f"{row['x_mm']:12.0f} {row['F_req_kN']:12.1f} {row['SumQn_prov_kN']:12.1f} "
+            f"{row['alpha']:8.3f} {row['shortfall_kN']:10.1f} {row['status']:>6}"
+        )
+    return lines
+
+
 def detailed_lines(result: "DesignResult") -> list[str]:
     lines = ["=== DETAILED CALCULATIONS (AISC citations) ==="]
     lines.extend(result.edition_flags)
     lines.append("")
     for n in result.detailed_notes:
         lines.append(f"• {n}")
+    lines.append("")
+    lines.extend(cumulative_table_lines(result))
     return lines

@@ -200,6 +200,7 @@ def _table(headers: list[str], rows: list[list[str]], row_ok: Optional[list[bool
 def _plotly_divs(result: "DesignResult") -> str:
     try:
         from composite_beam.reporting.charts import (
+            cumulative_action_figure,
             interaction_figure,
             moment_shear_figures,
             stud_layout_figure,
@@ -214,6 +215,9 @@ def _plotly_divs(result: "DesignResult") -> str:
     s = stud_layout_figure(result)
     if s is not None:
         figs.append(s)
+    c = cumulative_action_figure(result)
+    if c is not None:
+        figs.append(c)
     if not figs:
         return "<p class='muted'>No diagrams (run a design first).</p>"
     chunks = []
@@ -282,6 +286,38 @@ def result_to_html(
     charts = _plotly_divs(result) if include_charts else ""
     notes = "".join(f"<li>{escape(line)}</li>" for line in summary_lines(result)[:8])
 
+    cum_html = ""
+    if result.cumulative is not None:
+        cum = result.cumulative
+        # subsample for HTML readability (~ every 2nd or max ~25 rows)
+        rows = cum.station_rows()
+        step = max(1, len(rows) // 25)
+        sampled = rows[::step]
+        if rows and sampled[-1] is not rows[-1]:
+            sampled.append(rows[-1])
+        cum_html = (
+            "<h2>Cumulative composite action (AISC I3.2d / I8 detailing)</h2>"
+            "<p class='muted'>F_req = C·M(x)/M_max from nearer origin (support or "
+            f"contraflexure) toward max +M. Origins: left={cum.origin_left_mm/1000:.2f} m, "
+            f"right={cum.origin_right_mm/1000:.2f} m. α = ΣQn/C_full. "
+            "Not a substitute for the discrete half-span stud count.</p>"
+            + _table(
+                ["x (mm)", "F_req (kN)", "ΣQn_prov (kN)", "α", "Shortfall (kN)", "Status"],
+                [
+                    [
+                        f"{r['x_mm']:.0f}",
+                        f"{r['F_req_kN']:.1f}",
+                        f"{r['SumQn_prov_kN']:.1f}",
+                        f"{r['alpha']:.3f}",
+                        f"{r['shortfall_kN']:.1f}",
+                        r["status"],
+                    ]
+                    for r in sampled
+                ],
+                [r["status"] == "OK" for r in sampled],
+            )
+        )
+
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -334,6 +370,7 @@ def result_to_html(
   <h2>Capacity vs demand</h2>
   {cap_html}
   {pass_html}
+  {cum_html}
   <h2>Headline notes</h2>
   <ul>{notes}</ul>
   <footer>AISC Comp Beam Designer — one-page results sheet. SI primary; US customary in brackets.
