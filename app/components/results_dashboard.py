@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from composite_beam.reporting.charts import (
+    cross_section_stress_figure,
     cumulative_action_figure,
     interaction_figure,
     moment_shear_figures,
@@ -182,6 +183,78 @@ def _capacity_records(result: "DesignResult") -> list[dict]:
     return rows
 
 
+
+def _moment_chart_for_selection(result: "DesignResult", fig_m, default_x: int, L_mm_int: int):
+    """Add selectable markers, station cursor, and customdata (x_mm) to the moment figure."""
+    import numpy as np
+    import plotly.graph_objects as go
+    import streamlit as st
+
+    d = result.diagram
+    if d is None:
+        return fig_m
+    M = d.M_kNmm / 1000.0
+    fig_m.data[0].mode = "lines+markers"
+    fig_m.data[0].marker = dict(size=8, color="rgba(31,78,121,0.3)")
+    fig_m.data[0].customdata = np.column_stack([d.x_mm])
+    fig_m.data[0].hovertemplate = (
+        "x=%{x:.3f} m<br>M=%{y:.1f} kN·m<br>x=%{customdata[0]:.0f} mm"
+        "<extra>click to set station</extra>"
+    )
+    x_preview = int(np.clip(st.session_state.get("stress_viewer_x_mm", default_x), 0, L_mm_int))
+    M_at = float(np.interp(x_preview, d.x_mm, M))
+    fig_m.add_vline(x=x_preview / 1000.0, line=dict(color="#e09f3e", width=2, dash="dot"))
+    fig_m.add_trace(
+        go.Scatter(
+            x=[x_preview / 1000.0],
+            y=[M_at],
+            mode="markers",
+            marker=dict(size=12, color="#e09f3e", symbol="diamond"),
+            name="station",
+            customdata=[[float(x_preview)]],
+            hovertemplate=f"x={x_preview:.0f} mm<br>M={M_at:.1f} kN·m<extra>station</extra>",
+        )
+    )
+    return fig_m
+
+
+def _x_mm_from_plotly_selection(event, L_mm_int: int):
+    """Extract station x (mm) from st.plotly_chart selection event, or None."""
+    if event is None:
+        return None
+    try:
+        sel = getattr(event, "selection", None)
+        if sel is None and isinstance(event, dict):
+            sel = event.get("selection")
+        if sel is None:
+            return None
+        pts = getattr(sel, "points", None)
+        if pts is None and isinstance(sel, dict):
+            pts = sel.get("points")
+        if not pts:
+            return None
+        pt = pts[0]
+        if not isinstance(pt, dict):
+            return None
+        x_sel = None
+        cd = pt.get("customdata")
+        if cd is not None:
+            try:
+                if hasattr(cd, "__len__") and not isinstance(cd, (str, bytes)):
+                    x_sel = float(cd[0])
+                else:
+                    x_sel = float(cd)
+            except Exception:
+                x_sel = None
+        if x_sel is None and pt.get("x") is not None:
+            x_sel = float(pt["x"]) * 1000.0  # chart axis is meters
+        if x_sel is None:
+            return None
+        return int(round(max(0, min(L_mm_int, x_sel))))
+    except Exception:
+        return None
+
+
 def render_results_dashboard(
     result: "DesignResult",
     project_label: str = "",
@@ -221,10 +294,27 @@ def render_results_dashboard(
     fig_h = interaction_figure(result)
     fig_s = stud_layout_figure(result)
     fig_c = cumulative_action_figure(result)
+
+    L_mm = float(result.inputs_summary.get("L_mm", 0.0) or 0.0)
+    L_mm_int = max(1, int(round(L_mm)))
+    default_x = int(round(L_mm / 2.0)) if L_mm > 0 else 0
+    if result.diagram is not None:
+        default_x = int(round(float(result.diagram.M_max_x_mm)))
+
     r1c1, r1c2 = st.columns(2)
     with r1c1:
         if figs:
-            st.plotly_chart(figs[0], use_container_width=True)
+            fig_m = _moment_chart_for_selection(result, figs[0], default_x, L_mm_int)
+            event = st.plotly_chart(
+                fig_m,
+                use_container_width=True,
+                key="moment_station_select",
+                on_select="rerun",
+                selection_mode="points",
+            )
+            x_from_sel = _x_mm_from_plotly_selection(event, L_mm_int)
+            if x_from_sel is not None:
+                st.session_state.stress_viewer_x_mm = x_from_sel
         else:
             st.caption("Moment diagram unavailable.")
     with r1c2:
@@ -232,6 +322,40 @@ def render_results_dashboard(
             st.plotly_chart(figs[1], use_container_width=True)
         else:
             st.caption("Shear diagram unavailable.")
+
+    # --- Cross-section stress viewer (station from click or scrubber) ---
+    st.caption(
+        "Click a point on the moment diagram (or scrub x) to view the "
+        "cross-section stress distribution."
+    )
+    st.subheader("Cross-section stress viewer")
+    if "stress_viewer_x_mm" not in st.session_state:
+        st.session_state.stress_viewer_x_mm = default_x
+    # Clamp if span changed
+    st.session_state.stress_viewer_x_mm = int(
+        max(0, min(L_mm_int, int(st.session_state.stress_viewer_x_mm)))
+    )
+    x_mm = st.slider(
+        "x (mm)",
+        min_value=0,
+        max_value=L_mm_int,
+        step=1,
+        key="stress_viewer_x_mm",
+        help="Station along the span (whole mm). Synced from moment-diagram point selection.",
+    )
+    show_plastic = st.checkbox(
+        "Show plastic stress blocks (I3.2a schematic)",
+        value=False,
+        key="stress_viewer_plastic",
+        help="Capacity-shape plastic stress blocks at PNA; annotated with M/Mn at this station.",
+    )
+    if result.diagram is not None and getattr(result, "shape", None) is not None:
+        fig_xs = cross_section_stress_figure(
+            result, float(x_mm), show_plastic_blocks=show_plastic
+        )
+        st.plotly_chart(fig_xs, use_container_width=True, key="cross_section_stress")
+    else:
+        st.caption("Cross-section stress viewer requires a governing diagram and section geometry.")
     r2c1, r2c2 = st.columns(2)
     with r2c1:
         if fig_h is not None:

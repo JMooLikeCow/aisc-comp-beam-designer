@@ -456,6 +456,10 @@ with tab_det:
         st.info("Run a design from the Input tab.")
     else:
         st.markdown("Calculations cite **AISC 360** section numbers and edition flags.")
+        st.caption(
+            "Interactive cross-section stress viewer (click moment diagram or scrub x) "
+            "is on the **Summary** tab."
+        )
         for line in detailed_lines(res):
             st.text(line)
         if getattr(res, "cumulative", None) is not None:

@@ -160,6 +160,10 @@ class DesignResult:
     punching: Optional[PunchingResult] = None
     pass_punching: bool = True
     cumulative: Optional[CumulativeCompositeResult] = None
+    # Geometry retained for cross-section stress viewer / reports
+    shape: Optional[WShape] = None
+    slab: Optional[SlabConfig] = None
+    Fy_MPa: float = 0.0
 
 
 def _slab_self_weight_kNpm(slab: SlabConfig, trib_mm: float, density_kNm3: float) -> float:
@@ -664,6 +668,9 @@ class DesignEngine:
             punching=punch,
             pass_punching=pass_punch,
             cumulative=cumulative,
+            shape=inp.shape,
+            slab=slab,
+            Fy_MPa=inp.steel.Fy_MPa,
         )
 
     def _search_passing(

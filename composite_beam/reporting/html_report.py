@@ -200,6 +200,7 @@ def _table(headers: list[str], rows: list[list[str]], row_ok: Optional[list[bool
 def _plotly_divs(result: "DesignResult") -> str:
     try:
         from composite_beam.reporting.charts import (
+            cross_section_stress_figure,
             cumulative_action_figure,
             interaction_figure,
             moment_shear_figures,
@@ -218,6 +219,20 @@ def _plotly_divs(result: "DesignResult") -> str:
     c = cumulative_action_figure(result)
     if c is not None:
         figs.append(c)
+    # Static cross-section stress at midspan and at max |M| (HTML has no hover)
+    if result.diagram is not None and getattr(result, "shape", None) is not None:
+        L = float(result.inputs_summary.get("L_mm", 0.0) or 0.0)
+        x_mid = L / 2.0
+        import numpy as np
+
+        i_ext = int(np.argmax(np.abs(result.diagram.M_kNmm)))
+        x_ext = float(result.diagram.x_mm[i_ext])
+        try:
+            figs.append(cross_section_stress_figure(result, x_mid, show_plastic_blocks=False))
+            if abs(x_ext - x_mid) > max(1.0, L * 0.01):
+                figs.append(cross_section_stress_figure(result, x_ext, show_plastic_blocks=False))
+        except Exception:
+            pass
     if not figs:
         return "<p class='muted'>No diagrams (run a design first).</p>"
     chunks = []
