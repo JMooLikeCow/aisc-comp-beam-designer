@@ -26,7 +26,8 @@ from composite_beam.analysis.continuous import SupportType
 from composite_beam.combinations.asce7 import ASCEEdition
 from composite_beam.composite.effective_width import AISCEdition, BeamLocation
 from composite_beam.composite.slab import DeckOrientation, SlabConfig, catalog_hr_wr_mm, load_deck_catalog
-from composite_beam.composite.stud_layout import StudZone
+from composite_beam.composite.stud_detailing import check_stud_detailing, n_studs_half_from_spacing
+from composite_beam.composite.stud_layout import StudZone, default_four_zones
 from composite_beam.composite.studs import StudConfig
 from composite_beam.design_engine import DesignEngine, DesignInputs
 from composite_beam.materials.concrete import ConcreteMaterial, EcCode
@@ -86,9 +87,10 @@ st.divider()
 
 run = False
 if st.session_state["main_view"] == "Input":
+    if "project_label" not in st.session_state:
+        st.session_state["project_label"] = "Composite beam"
     project_label = st.text_input(
         "Project / beam label",
-        value="Composite beam",
         key="project_label",
         help="Printed on the Summary results sheet header.",
     )
@@ -339,6 +341,51 @@ if st.session_state["main_view"] == "Input":
     Fu_stud = si_int_input(
         "Stud Fu (MPa)", 350, 550, 450, 1, key="Fus_MPa", dual=dual_stress_MPa
     )
+    sc1, sc2 = st.columns(2)
+    with sc1:
+        n_across = si_int_input(
+            "Studs across flange n_across",
+            1,
+            6,
+            1,
+            1,
+            key="n_across",
+            help="Transverse rows across bf. Also used as n_studs_per_rib for Rg (deck ⊥) "
+            "and as StudZone.n_rows / synthesize n_rows.",
+        )
+    with sc2:
+        s_long_mm = si_int_input(
+            "Longitudinal spacing s_long (mm)",
+            50,
+            1200,
+            305,
+            1,
+            key="s_long_mm",
+            dual=dual_length_mm,
+            help="Center-to-center spacing along the beam (whole mm).",
+        )
+
+    # Live AISC I8.2d detailing warnings (no Run required)
+    t_total_mm = float(t_solid_mm) + float(hr_mm)
+    detailing_msgs = check_stud_detailing(
+        ds_mm=float(ds_mm),
+        s_long_mm=float(s_long_mm),
+        n_across=int(n_across),
+        bf_mm=float(shape.bf_mm),
+        tf_mm=float(shape.tf_mm),
+        t_total_mm=t_total_mm,
+    )
+    for msg in detailing_msgs:
+        if "cannot fit" in msg or "exceeds 2.5" in msg:
+            st.error(msg)
+        else:
+            st.warning(msg)
+    if not detailing_msgs:
+        st.caption(
+            "AISC 360-22 §I8.2d: s_long ≥ 6·ds, s_trans ≥ 4·ds, "
+            "s ≤ min(8·t_total, 36 in); edge clear assumed ≥ 25 mm (~1 in)."
+        )
+
     use_four = st.checkbox("Four independent stud-spacing zones", False, key="fourz")
     stud_zones = None
     target_ratio = None
@@ -346,16 +393,20 @@ if st.session_state["main_view"] == "Input":
     if use_four:
         st.caption(
             "Zone ratios of span (decimal exception); spacing in whole mm; "
-            "rows = studs across the flange."
+            "rows = studs across the flange (defaults from n_across)."
         )
-        default_s = [305, 305, 305, 305]
+        default_s = [int(s_long_mm)] * 4
         default_r = [(0.0, 0.25), (0.25, 0.50), (0.50, 0.75), (0.75, 1.0)]
         names = ["Z1 left end", "Z2 left mid", "Z3 right mid", "Z4 right end"]
         stud_zones = []
         for i, name in enumerate(names):
             zc1, zc2, zc3, zc4 = st.columns(4)
-            a = zc1.number_input(f"{name} start x/L", 0.0, 1.0, default_r[i][0], 0.05, key=f"zs{i}")
-            b = zc2.number_input(f"{name} end x/L", 0.0, 1.0, default_r[i][1], 0.05, key=f"ze{i}")
+            if f"zs{i}" not in st.session_state:
+                st.session_state[f"zs{i}"] = default_r[i][0]
+            if f"ze{i}" not in st.session_state:
+                st.session_state[f"ze{i}"] = default_r[i][1]
+            a = zc1.number_input(f"{name} start x/L", 0.0, 1.0, step=0.05, key=f"zs{i}")
+            b = zc2.number_input(f"{name} end x/L", 0.0, 1.0, step=0.05, key=f"ze{i}")
             with zc3:
                 s_mm = si_int_input(
                     f"{name} spacing (mm)",
@@ -366,19 +417,63 @@ if st.session_state["main_view"] == "Input":
                     key=f"zsp_mm{i}",
                     dual=dual_length_mm,
                 )
-            rows = zc4.number_input(f"{name} rows", 1, 4, 1, key=f"zr{i}")
+            with zc4:
+                rows = si_int_input(
+                    f"{name} rows",
+                    1,
+                    6,
+                    int(n_across),
+                    1,
+                    key=f"zr{i}",
+                )
             stud_zones.append(StudZone(name, a, b, float(s_mm), int(rows)))
+        # Zone-specific detailing (min spacing / max rows)
+        min_zs = min(z.spacing_mm for z in stud_zones)
+        max_zr = max(z.n_rows for z in stud_zones)
+        zone_msgs = check_stud_detailing(
+            ds_mm=float(ds_mm),
+            s_long_mm=float(min_zs),
+            n_across=int(max_zr),
+            bf_mm=float(shape.bf_mm),
+            tf_mm=float(shape.tf_mm),
+            t_total_mm=t_total_mm,
+        )
+        for msg in zone_msgs:
+            if msg not in detailing_msgs:
+                if "cannot fit" in msg or "exceeds 2.5" in msg:
+                    st.error(msg)
+                else:
+                    st.warning(msg)
     else:
+        # Migrate legacy radio label stored in session_state
+        if st.session_state.get("compm") == "Check layout (n studs)":
+            st.session_state["compm"] = "Check layout (n_across + s_long)"
         comp_mode = st.radio(
             "Shear connection",
-            ["Full composite", "Partial — target %", "Check layout (n studs)"],
+            [
+                "Full composite",
+                "Partial — target %",
+                "Check layout (n_across + s_long)",
+            ],
             key="compm",
         )
         if comp_mode.startswith("Partial"):
             pct = st.slider("Target ΣQn/C (%)", 25, 100, 50, key="pct")
             target_ratio = pct / 100.0
         elif comp_mode.startswith("Check"):
-            n_studs = st.number_input("Studs each side of max M", 1, 200, 20, key="nst")
+            n_studs = n_studs_half_from_spacing(
+                float(L_mm), float(s_long_mm), int(n_across), x_Mmax_mm=float(L_mm) / 2.0
+            )
+            st.caption(
+                f"Check layout: s_long={int(s_long_mm)} mm · n_across={int(n_across)} → "
+                f"**{n_studs} studs** each side of midspan (engine re-counts at actual max M). "
+                "Four equal zones with this spacing are used for layout / ΣQn."
+            )
+            # Prefer spacing-driven zones so layout / punching / cumulative match.
+            stud_zones = default_four_zones(
+                spacing_mm=float(s_long_mm), n_rows=int(n_across)
+            )
+            n_studs = None  # layout sets n_half
 
     st.subheader("Negative moment (continuous)")
     residual = st.checkbox(
@@ -446,6 +541,10 @@ if run:
         stud=StudConfig(diameter_mm=float(ds_mm), Fu_stud_MPa=float(Fu_stud)),
         n_studs_half_span=int(n_studs) if n_studs else None,
         target_composite_ratio=target_ratio,
+        n_studs_per_rib=(
+            max(int(z.n_rows) for z in stud_zones) if stud_zones else int(n_across)
+        ),
+        s_long_mm=float(s_long_mm),
         n_override=n_ov if n_ov > 0 else None,
         **parsed_loads.as_design_kwargs(),
         shored=shored,

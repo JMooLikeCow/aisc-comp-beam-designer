@@ -3,6 +3,10 @@
 Dimensional / force / stress / moment / line-load inputs are whole numbers
 (integer widgets). Exceptions kept as decimals: dimensionless ratios (x/L),
 K factor, modular ratio n override, and ASCE load factors.
+
+Remount-safe: when a session_state key already exists (e.g. after leaving
+Summary and returning to Input), do not overwrite it with the default
+``value`` — Streamlit view switchers unmount widgets, unlike ``st.tabs``.
 """
 
 from __future__ import annotations
@@ -29,10 +33,11 @@ def si_number_input(
 
     Prefer :func:`si_int_input` for dimensional / force / stress quantities.
     """
+    if key not in st.session_state:
+        st.session_state[key] = float(value)
     kwargs = {
         "min_value": min_value,
         "max_value": max_value,
-        "value": value,
         "key": key,
         "disabled": disabled,
     }
@@ -58,12 +63,29 @@ def si_int_input(
     dual: Optional[Callable[[Union[int, float]], str]] = None,
     help: Optional[str] = None,
 ) -> int:
-    """Integer SI number_input (step=1, format=%d) with optional dual US caption."""
+    """Integer SI number_input (step=1, format=%d) with optional dual US caption.
+
+    On remount, preserves ``st.session_state[key]`` when already set instead of
+    resetting to the caller's default ``value``.
+    """
+    if key not in st.session_state:
+        st.session_state[key] = int(value)
+    else:
+        # Clamp existing state into the widget bounds (e.g. catalog changes).
+        try:
+            cur = int(st.session_state[key])
+        except (TypeError, ValueError):
+            cur = int(value)
+            st.session_state[key] = cur
+        lo, hi = int(min_value), int(max_value)
+        if cur < lo:
+            st.session_state[key] = lo
+        elif cur > hi:
+            st.session_state[key] = hi
     v = st.number_input(
         label,
         min_value=int(min_value),
         max_value=int(max_value),
-        value=int(value),
         step=int(step),
         format="%d",
         key=key,

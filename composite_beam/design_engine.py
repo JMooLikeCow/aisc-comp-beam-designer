@@ -96,7 +96,8 @@ class DesignInputs:
     phi_b: float = 0.90
     Omega_b: float = 1.67
     custom_combinations: list[Combination] = field(default_factory=list)
-    n_studs_per_rib: int = 1
+    n_studs_per_rib: int = 1  # = n_across (studs across flange); also Rg when deck ⊥
+    s_long_mm: Optional[float] = None  # longitudinal spacing for layout / detailing
     # --- P1 ---
     support: SupportType = SupportType.SIMPLY_SUPPORTED
     M_left_override_kNm: Optional[float] = None
@@ -343,16 +344,26 @@ class DesignEngine:
                 if gov_diag is None:
                     gov_diag = diag
 
-        # Four-zone studs (optional). When provided, they set n each side of max M.
+        # Four-zone / spacing-driven studs. When provided, they set n each side of max M.
         stud_layout: Optional[StudLayoutResult] = None
         n_half = inp.n_studs_half_span
-        if inp.stud_zones is not None:
+        # If longitudinal spacing is given without explicit zones, synthesize four equal zones.
+        stud_zones = inp.stud_zones
+        if stud_zones is None and inp.s_long_mm is not None and inp.s_long_mm > 0 and (
+            inp.n_studs_half_span is not None and inp.target_composite_ratio is None
+        ):
+            from composite_beam.composite.stud_layout import default_four_zones
+            stud_zones = default_four_zones(
+                spacing_mm=float(inp.s_long_mm),
+                n_rows=max(1, int(inp.n_studs_per_rib)),
+            )
+        if stud_zones is not None:
             x_mmax = gov_diag.M_max_x_mm if gov_diag is not None else inp.L_mm / 2.0
             hog_x = list(gov_diag.x_mm) if gov_diag is not None else None
             hog_m = list(gov_diag.M_kNmm < -1e-6) if gov_diag is not None else None
             stud_layout = layout_studs(
                 inp.L_mm,
-                inp.stud_zones,
+                stud_zones,
                 x_Mmax_mm=x_mmax,
                 hogging_mask_x_mm=hog_x,
                 hogging_mask=hog_m,
@@ -366,7 +377,7 @@ class DesignEngine:
             slab,
             stud_qn,
             n_studs_half_span=n_half,
-            target_ratio=inp.target_composite_ratio if inp.stud_zones is None else None,
+            target_ratio=inp.target_composite_ratio if stud_zones is None else None,
         )
 
         pos = positive_flexural_strength(
@@ -518,10 +529,12 @@ class DesignEngine:
 
         # Punching
         min_s = 1.0e9
-        n_rows = 1
-        if inp.stud_zones:
-            min_s = min(z.spacing_mm for z in inp.stud_zones if z.spacing_mm > 0)
-            n_rows = max(z.n_rows for z in inp.stud_zones)
+        n_rows = max(1, int(inp.n_studs_per_rib))
+        if stud_zones:
+            min_s = min(z.spacing_mm for z in stud_zones if z.spacing_mm > 0)
+            n_rows = max(z.n_rows for z in stud_zones)
+        elif inp.s_long_mm and inp.s_long_mm > 0:
+            min_s = float(inp.s_long_mm)
         elif shear.n_studs_provided > 0:
             min_s = inp.L_mm / max(2 * shear.n_studs_provided, 1)
         punch = punching_with_group(
@@ -590,6 +603,10 @@ class DesignEngine:
         # Cumulative composite action along span (detailing plot)
         cumulative: Optional[CumulativeCompositeResult] = None
         if gov_diag is not None:
+            n_rows = max(1, int(inp.n_studs_per_rib))
+            # shear.n_studs_provided is total studs; synthesize expects station count
+            n_prov = int(shear.n_studs_provided)
+            n_stations = (n_prov + n_rows - 1) // n_rows if n_rows > 1 else n_prov
             cumulative = cumulative_composite_action(
                 inp.L_mm,
                 shear.C_full_kN,
@@ -598,8 +615,10 @@ class DesignEngine:
                 M_kNmm=gov_diag.M_kNmm,
                 x_maxM_mm=gov_diag.M_max_x_mm,
                 stud_layout=stud_layout,
-                n_studs_half_span=shear.n_studs_provided,
-                n_rows=inp.n_studs_per_rib,
+                n_studs_half_span=n_stations,
+                n_rows=n_rows,
+                # Spacing-driven positions come from stud_layout (check-layout path).
+                s_long_mm=None,
             )
             notes.extend(cumulative.notes)
 

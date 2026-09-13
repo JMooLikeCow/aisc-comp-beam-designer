@@ -132,16 +132,32 @@ def _positive_segment_origins(
 def synthesize_uniform_stud_positions(
     L_mm: float,
     x_maxM_mm: float,
-    n_half: int,
+    n_half: int | None = None,
     n_rows: int = 1,
+    s_long_mm: float | None = None,
 ) -> list[StudPosition]:
     """
-    Place n_half studs uniformly on each side of max M when no four-zone layout
-    is provided (matches the discrete half-span n used in shear_connection).
+    Place studs when no four-zone layout is provided.
+
+    Prefer ``s_long_mm`` (uniform longitudinal spacing, first stud at s/2) with
+    ``n_rows`` across the flange. Otherwise place ``n_half`` *longitudinal
+    stations* uniformly on each side of max M (each station has ``n_rows`` studs).
+    ``n_half`` is station count, not total stud count when ``n_rows`` > 1.
     """
     positions: list[StudPosition] = []
-    n_half = max(0, int(n_half))
     n_rows = max(1, int(n_rows))
+
+    if s_long_mm is not None and float(s_long_mm) > 0:
+        s = float(s_long_mm)
+        x = 0.5 * s
+        while x < L_mm - 1e-6:
+            side = "uniform L" if x <= x_maxM_mm + 1e-6 else "uniform R"
+            for row in range(n_rows):
+                positions.append(StudPosition(x_mm=float(x), zone_name=side, row=row))
+            x += s
+        return positions
+
+    n_half = max(0, int(n_half or 0))
     if n_half == 0:
         return positions
 
@@ -211,6 +227,7 @@ def cumulative_composite_action(
     stud_layout: Optional[StudLayoutResult] = None,
     n_studs_half_span: Optional[int] = None,
     n_rows: int = 1,
+    s_long_mm: Optional[float] = None,
     n_even_stations: int = 31,
     tol_kN: float = 0.05,
 ) -> CumulativeCompositeResult:
@@ -260,12 +277,22 @@ def cumulative_composite_action(
     else:
         n_half = int(n_studs_half_span or 0)
         positions = synthesize_uniform_stud_positions(
-            L_mm, x_maxM_mm, n_half, n_rows=n_rows
+            L_mm,
+            x_maxM_mm,
+            n_half,
+            n_rows=n_rows,
+            s_long_mm=s_long_mm,
         )
-        notes.append(
-            f"Uniform stud synthesis: {n_half} each side of max M "
-            f"→ {len(positions)} positions (n_rows={n_rows})."
-        )
+        if s_long_mm and float(s_long_mm) > 0:
+            notes.append(
+                f"Uniform stud synthesis from s_long={float(s_long_mm):.0f} mm, "
+                f"n_rows={n_rows} → {len(positions)} positions."
+            )
+        else:
+            notes.append(
+                f"Uniform stud synthesis: {n_half} stations each side of max M "
+                f"→ {len(positions)} positions (n_rows={n_rows})."
+            )
 
     stud_xs = [p.x_mm for p in positions]
     # Each position is one stud; Qn per position

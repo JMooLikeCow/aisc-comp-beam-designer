@@ -545,10 +545,15 @@ def render_load_tables(L_mm: float) -> ParsedLoads:
         "E/W/T rows may be UDL or Point."
     )
 
-    load_df = default_load_dataframe()
-    # Preserve Include/values across reruns via the data_editor key.
+    # Persist DataFrames explicitly: view switchers unmount widgets (unlike st.tabs),
+    # and data_editor state is fragile on remount — always seed from saved DF.
+    if "load_df_persisted" not in st.session_state:
+        st.session_state["load_df_persisted"] = default_load_dataframe()
+    if "extra_points_persisted" not in st.session_state:
+        st.session_state["extra_points_persisted"] = default_extra_points_dataframe()
+
     edited = st.data_editor(
-        load_df,
+        st.session_state["load_df_persisted"],
         key="load_case_editor",
         hide_index=True,
         num_rows="fixed",
@@ -579,10 +584,11 @@ def render_load_tables(L_mm: float) -> ParsedLoads:
             "Notes": st.column_config.TextColumn("Notes", width="large"),
         },
     )
+    st.session_state["load_df_persisted"] = edited.copy()
 
     st.markdown("**Extra point loads** (optional compact table — not a vertical list)")
     extra = st.data_editor(
-        default_extra_points_dataframe(),
+        st.session_state["extra_points_persisted"],
         key="extra_points_editor",
         hide_index=True,
         num_rows="dynamic",
@@ -607,6 +613,7 @@ def render_load_tables(L_mm: float) -> ParsedLoads:
             "Notes": st.column_config.TextColumn("Notes"),
         },
     )
+    st.session_state["extra_points_persisted"] = extra.copy()
 
     parsed = parse_load_table(edited, L_mm=float(L_mm), extra_points=extra)
     st.caption(WIRING_CAPTION)
@@ -645,14 +652,16 @@ def render_combo_table(edition: ASCEEdition | str, method: str) -> ParsedCombos:
         st.session_state["_combo_table_sig"] = sig
         # Drop the editor widget state so factors reload from the new edition/method
         st.session_state.pop("combo_table_editor", None)
+        st.session_state["combo_df_persisted"] = default_combo_dataframe(edition, method)
+    if "combo_df_persisted" not in st.session_state:
+        st.session_state["combo_df_persisted"] = default_combo_dataframe(edition, method)
 
-    combo_df = default_combo_dataframe(edition, method)
     factor_cfg = {
         k: st.column_config.NumberColumn(k, min_value=0.0, max_value=2.5, step=0.05, format="%.2f")
         for k in COMBO_FACTOR_COLS
     }
     edited = st.data_editor(
-        combo_df,
+        st.session_state["combo_df_persisted"],
         key="combo_table_editor",
         hide_index=True,
         num_rows="dynamic",
@@ -664,6 +673,7 @@ def render_combo_table(edition: ASCEEdition | str, method: str) -> ParsedCombos:
             **factor_cfg,
         },
     )
+    st.session_state["combo_df_persisted"] = edited.copy()
     parsed = parse_combo_table(edited, method=method, edition=edition)
     for n in parsed.notes:
         st.caption(n)

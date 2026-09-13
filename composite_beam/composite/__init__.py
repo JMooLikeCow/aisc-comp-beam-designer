@@ -16,6 +16,11 @@ from composite_beam.composite.stud_layout import (
     layout_studs,
 )
 from composite_beam.composite.studs import StudConfig, StudGoverning, StudQnResult, stud_Qn
+from composite_beam.composite.stud_detailing import (
+    check_stud_detailing,
+    max_n_across_on_flange,
+    n_studs_half_from_spacing,
+)
 from composite_beam.composite.cumulative_action import (
     CumulativeCompositeResult,
     cumulative_composite_action,
@@ -48,4 +53,7 @@ __all__ = [
     "CumulativeCompositeResult",
     "cumulative_composite_action",
     "synthesize_uniform_stud_positions",
+    "check_stud_detailing",
+    "max_n_across_on_flange",
+    "n_studs_half_from_spacing",
 ]
