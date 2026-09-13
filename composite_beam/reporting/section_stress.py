@@ -67,6 +67,44 @@ def moment_at_x_kNm(result: "DesignResult", x_mm: float) -> float:
     return M_kNmm / 1000.0
 
 
+
+def peak_elastic_stress_MPa(result: "DesignResult", *, n_stations: int = 41) -> float:
+    """
+    Peak absolute material stress |σ| (MPa) over the span for the governing occupancy diagram.
+
+    Samples elastic concrete + steel stresses at stations along ``result.diagram``
+    (or midspan if no diagram). Used to fix the stress-diagram axis while scrubbing x.
+    """
+    d = result.diagram
+    if d is None or len(d.x_mm) == 0:
+        L = float(result.inputs_summary.get("L_mm", 0.0) or 0.0)
+        xs = [L / 2.0] if L > 0 else [0.0]
+    else:
+        xs_arr = np.asarray(d.x_mm, dtype=float)
+        if len(xs_arr) <= n_stations:
+            xs = xs_arr.tolist()
+        else:
+            idx = np.linspace(0, len(xs_arr) - 1, n_stations).astype(int)
+            xs = xs_arr[idx].tolist()
+            # Always include extrema of |M|
+            i_ext = int(np.argmax(np.abs(d.M_kNmm)))
+            xs.append(float(xs_arr[i_ext]))
+
+    peak = 0.0
+    for x in xs:
+        try:
+            prof = elastic_stress_profile(result, float(x))
+        except Exception:
+            continue
+        peak = max(
+            peak,
+            float(np.max(np.abs(prof.sigma_material_MPa))) if len(prof.sigma_material_MPa) else 0.0,
+            abs(float(prof.sigma_c_top_MPa)),
+            abs(float(prof.sigma_s_bot_MPa)),
+        )
+    return float(peak) if peak > 0.0 else 1.0
+
+
 def _shape_slab(result: "DesignResult") -> tuple["WShape", "SlabConfig", float]:
     shape = getattr(result, "shape", None)
     slab = getattr(result, "slab", None)

@@ -1,4 +1,4 @@
-"""Streamlit UI — Input / Summary / Detailed Calculations tabs.
+"""Streamlit UI — Input / Summary / Detailed Calculations views.
 
 SI is the primary input and display system; US customary equivalents update
 in real time in brackets next to every dimensional / force / stress / moment quantity.
@@ -59,9 +59,33 @@ db = get_db()
 grades = load_steel_grades()
 decks = load_deck_catalog()
 
-tab_in, tab_sum, tab_det = st.tabs(["Input", "Summary", "Detailed Calculations"])
+_VIEW_LABELS = ("Input", "Summary", "Detailed Calculations")
+if "main_view" not in st.session_state:
+    st.session_state["main_view"] = "Input"
 
-with tab_in:
+
+def _render_main_nav(prefix: str) -> None:
+    """Horizontal Input | Summary | Detailed buttons; both ends write main_view."""
+    cols = st.columns(len(_VIEW_LABELS))
+    for col, label in zip(cols, _VIEW_LABELS):
+        with col:
+            is_active = st.session_state["main_view"] == label
+            if st.button(
+                label,
+                key=f"nav_{prefix}_{label}",
+                use_container_width=True,
+                type="primary" if is_active else "secondary",
+            ):
+                if st.session_state["main_view"] != label:
+                    st.session_state["main_view"] = label
+                    st.rerun()
+
+
+_render_main_nav("top")
+st.divider()
+
+run = False
+if st.session_state["main_view"] == "Input":
     project_label = st.text_input(
         "Project / beam label",
         value="Composite beam",
@@ -394,6 +418,7 @@ with tab_in:
 if "result" not in st.session_state:
     st.session_state.result = None
 
+# Run design only when Input view just submitted (inputs in scope)
 if run:
     ML = None
     MR = None
@@ -443,22 +468,22 @@ if run:
         eng = DesignEngine(db)
         st.session_state.result = eng.design(inp, search_passing=True)
 
-with tab_sum:
+if st.session_state["main_view"] == "Summary":
     res = st.session_state.result
     if res is None:
-        st.info("Run a design from the Input tab.")
+        st.info("Run a design from the Input view.")
     else:
         render_results_dashboard(res, project_label=res.inputs_summary.get("project_label", ""))
 
-with tab_det:
+if st.session_state["main_view"] == "Detailed Calculations":
     res = st.session_state.result
     if res is None:
-        st.info("Run a design from the Input tab.")
+        st.info("Run a design from the Input view.")
     else:
         st.markdown("Calculations cite **AISC 360** section numbers and edition flags.")
         st.caption(
             "Interactive cross-section stress viewer (click moment diagram or scrub x) "
-            "is on the **Summary** tab."
+            "is on the **Summary** view."
         )
         for line in detailed_lines(res):
             st.text(line)
@@ -487,3 +512,6 @@ with tab_det:
                 use_container_width=True,
                 hide_index=True,
             )
+
+st.divider()
+_render_main_nav("bot")

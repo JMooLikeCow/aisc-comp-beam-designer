@@ -13,6 +13,19 @@ def _go():
     return go
 
 
+def moment_display_kNm(M_analysis_kNm):
+    """
+    Structural convention: draw the BMD on the tension face.
+
+    Analysis sign: +sagging / −hogging. Display = −M_analysis so sagging
+    (tension at bottom) appears below the baseline and hogging (tension at top)
+    appears above.
+    """
+    import numpy as np
+
+    return -np.asarray(M_analysis_kNm, dtype=float)
+
+
 def moment_shear_figures(result: "DesignResult") -> list:
     """Moment and shear diagrams for the governing occupancy combination."""
     go = _go()
@@ -21,22 +34,38 @@ def moment_shear_figures(result: "DesignResult") -> list:
     if d is None:
         return figs
     x_m = d.x_mm / 1000.0
+    M_analysis = d.M_kNmm / 1000.0  # kN·m, +sagging / −hogging
+    M_display = moment_display_kNm(M_analysis)
+    hovertext = [
+        (
+            f"M_display={md:.1f} kN·m<br>"
+            f"M_analysis={ma:+.1f} kN·m "
+            f"({'sagging' if ma >= 0 else 'hogging'})"
+        )
+        for ma, md in zip(M_analysis, M_display)
+    ]
     figs.append(
         go.Figure(
             data=[
                 go.Scatter(
                     x=x_m,
-                    y=d.M_kNmm / 1000.0,
+                    y=M_display,
                     mode="lines",
-                    name="M",
+                    name="M (tension face)",
                     fill="tozeroy",
                     line=dict(color="#1f4e79", width=2),
+                    customdata=d.x_mm,
+                    text=hovertext,
+                    hovertemplate=(
+                        "x=%{x:.3f} m<br>%{text}<br>x=%{customdata:.0f} mm"
+                        "<extra></extra>"
+                    ),
                 )
             ],
             layout=go.Layout(
-                title="Bending moment (governing occupancy combo)",
+                title="Bending moment (governing occupancy combo) — drawn on tension face",
                 xaxis_title="x (m) [ft]",
-                yaxis_title="M (kN·m) [kip·ft]  +sagging / −hogging",
+                yaxis_title="M (kN·m) [kip·ft] — drawn on tension face (sagging ↓)",
                 template="plotly_white",
                 height=320,
                 margin=dict(l=50, r=20, t=40, b=40),
@@ -135,14 +164,15 @@ def stud_layout_figure(result: "DesignResult"):
             )
         )
     if result.diagram is not None:
-        M = result.diagram.M_kNmm / 1000.0
-        mmax = max(abs(float(M.max())), 1.0)
+        M_analysis = result.diagram.M_kNmm / 1000.0
+        M_disp = moment_display_kNm(M_analysis)
+        mmax = max(abs(float(M_disp.max())), abs(float(M_disp.min())), 1.0)
         fig.add_trace(
             go.Scatter(
                 x=result.diagram.x_mm / 1000.0,
-                y=(M / mmax) * 0.8 - 1.2,
+                y=(M_disp / mmax) * 0.8 - 1.2,
                 mode="lines",
-                name="M (scaled)",
+                name="M (scaled, tension face)",
                 line=dict(color="#888", width=1, dash="dot"),
             )
         )
@@ -239,6 +269,7 @@ def cross_section_stress_figure(
     x_mm: float,
     *,
     show_plastic_blocks: bool = False,
+    sigma_axis_MPa: float | None = None,
 ):
     """
     Side-by-side cross-section outline + elastic stress distribution at station x.
@@ -252,6 +283,7 @@ def cross_section_stress_figure(
 
     from composite_beam.reporting.section_stress import (
         elastic_stress_profile,
+        peak_elastic_stress_MPa,
         plastic_block_schematic,
         section_geometry_for_plot,
     )
@@ -268,6 +300,12 @@ def cross_section_stress_figure(
             height=400,
         )
         return fig
+
+    if sigma_axis_MPa is None:
+        sigma_axis_MPa = peak_elastic_stress_MPa(result)
+    sigma_lim = float(sigma_axis_MPa) * 1.05  # 5% pad; fixed while scrubbing x
+    if sigma_lim <= 0:
+        sigma_lim = 1.0
 
     shape = geom["shape"]
     t = geom["t_solid_mm"]
@@ -411,7 +449,7 @@ def cross_section_stress_figure(
     )
     fig.add_trace(
         go.Scatter(
-            x=[float(np.min(s)) * 1.1, float(np.max(s)) * 1.1],
+            x=[-sigma_lim, sigma_lim],
             y=[prof.y_NA_from_top_mm, prof.y_NA_from_top_mm],
             mode="lines",
             line=dict(color="#e09f3e", width=1.5, dash="dash"),
@@ -517,7 +555,26 @@ def cross_section_stress_figure(
         fig.update_xaxes(title_text="σ (MPa) [ksi]", row=1, col=3, zeroline=True)
 
     fig.update_xaxes(title_text="Width (mm) [in]", row=1, col=1, zeroline=True)
-    fig.update_xaxes(title_text="σ (MPa) [ksi]  −comp / +tens", row=1, col=2, zeroline=True)
+    fig.update_xaxes(
+        title_text="σ (MPa) [ksi]  −comp / +tens",
+        row=1,
+        col=2,
+        zeroline=True,
+        range=[-sigma_lim, sigma_lim],
+    )
+    if show_plastic_blocks:
+        fig.update_xaxes(range=[-sigma_lim, sigma_lim], row=1, col=3)
+
+    # Annotate fixed σ_max used for the axis scale
+    fig.add_annotation(
+        text=f"σ_max = {float(sigma_axis_MPa):.2f} MPa (span peak, fixed scale)",
+        xref="x2 domain",
+        yref="y2 domain",
+        x=0.5,
+        y=-0.14,
+        showarrow=False,
+        font=dict(size=11, color="#555"),
+    )
 
     hog_note = " · HOGGING (steel-only)" if prof.hogging else ""
     beff_note = (
@@ -533,7 +590,7 @@ def cross_section_stress_figure(
         ),
         template="plotly_white",
         height=480,
-        margin=dict(l=50, r=30, t=80, b=50),
+        margin=dict(l=50, r=30, t=80, b=70),
         legend=dict(orientation="h", yanchor="bottom", y=-0.18, x=0),
     )
     return fig

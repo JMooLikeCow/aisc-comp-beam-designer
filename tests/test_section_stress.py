@@ -9,10 +9,15 @@ from composite_beam.composite.slab import DeckOrientation, SlabConfig
 from composite_beam.design_engine import DesignEngine, DesignInputs
 from composite_beam.materials.concrete import ConcreteMaterial, EcCode
 from composite_beam.materials.steel import SteelMaterial
-from composite_beam.reporting.charts import cross_section_stress_figure
+from composite_beam.reporting.charts import (
+    cross_section_stress_figure,
+    moment_display_kNm,
+    moment_shear_figures,
+)
 from composite_beam.reporting.section_stress import (
     elastic_stress_profile,
     moment_at_x_kNm,
+    peak_elastic_stress_MPa,
     plastic_block_schematic,
 )
 from composite_beam.units import in_to_mm, ksi_to_mpa
@@ -97,3 +102,41 @@ def test_html_includes_cross_section(ss_positive_result):
 
     html = result_to_html(ss_positive_result)
     assert "Cross-section stress" in html
+
+
+def test_moment_display_flips_sign(ss_positive_result):
+    """Sagging M_analysis > 0 must plot below baseline (display y < 0)."""
+    import numpy as np
+
+    assert moment_display_kNm(100.0) < 0
+    assert moment_display_kNm(-50.0) > 0  # hogging → above baseline
+
+    res = ss_positive_result
+    assert res.diagram is not None
+    M_analysis = res.diagram.M_kNmm / 1000.0
+    assert float(np.max(M_analysis)) > 0  # SS UDL: sagging midspan
+    figs = moment_shear_figures(res)
+    assert figs
+    y = np.asarray(figs[0].data[0].y, dtype=float)
+    # Midspan sagging → plotted below baseline
+    i_mid = int(np.argmax(M_analysis))
+    assert M_analysis[i_mid] > 0
+    assert y[i_mid] < 0
+    assert np.allclose(y, -M_analysis)
+
+
+def test_peak_elastic_stress_positive(ss_positive_result):
+    """Span peak |σ| helper returns a positive value for the dummy SS case."""
+    peak = peak_elastic_stress_MPa(ss_positive_result)
+    assert peak > 0.0
+    fig = cross_section_stress_figure(
+        ss_positive_result,
+        ss_positive_result.inputs_summary["L_mm"] / 2.0,
+        sigma_axis_MPa=peak,
+    )
+    # Fixed ±σ_max with 5% pad on elastic panel (xaxis2)
+    xaxis = fig.layout.xaxis2
+    assert xaxis.range is not None
+    lo, hi = float(xaxis.range[0]), float(xaxis.range[1])
+    assert hi == pytest.approx(peak * 1.05, rel=1e-6)
+    assert lo == pytest.approx(-peak * 1.05, rel=1e-6)

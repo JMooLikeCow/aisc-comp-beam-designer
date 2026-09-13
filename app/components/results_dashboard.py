@@ -8,9 +8,11 @@ from composite_beam.reporting.charts import (
     cross_section_stress_figure,
     cumulative_action_figure,
     interaction_figure,
+    moment_display_kNm,
     moment_shear_figures,
     stud_layout_figure,
 )
+from composite_beam.reporting.section_stress import peak_elastic_stress_MPa
 from composite_beam.reporting.excel_export import result_to_xlsx_bytes
 from composite_beam.reporting.html_report import result_to_html_bytes
 from composite_beam.units import (
@@ -193,26 +195,46 @@ def _moment_chart_for_selection(result: "DesignResult", fig_m, default_x: int, L
     d = result.diagram
     if d is None:
         return fig_m
-    M = d.M_kNmm / 1000.0
+    M_analysis = d.M_kNmm / 1000.0
+    M_display = moment_display_kNm(M_analysis)
     fig_m.data[0].mode = "lines+markers"
     fig_m.data[0].marker = dict(size=8, color="rgba(31,78,121,0.3)")
-    fig_m.data[0].customdata = np.column_stack([d.x_mm])
+    # Keep customdata as x_mm (mm) for point selection; analysis sign in hover text
+    fig_m.data[0].customdata = np.asarray(d.x_mm)
+    hovertext = [
+        (
+            f"M_display={md:.1f} kN·m<br>"
+            f"M_analysis={ma:+.1f} kN·m "
+            f"({'sagging' if ma >= 0 else 'hogging'})"
+        )
+        for ma, md in zip(M_analysis, M_display)
+    ]
+    fig_m.data[0].text = hovertext
     fig_m.data[0].hovertemplate = (
-        "x=%{x:.3f} m<br>M=%{y:.1f} kN·m<br>x=%{customdata[0]:.0f} mm"
+        "x=%{x:.3f} m<br>%{text}<br>x=%{customdata:.0f} mm"
         "<extra>click to set station</extra>"
     )
+    # Ensure plotted y stays on tension-face (display) values
+    fig_m.data[0].y = M_display
     x_preview = int(np.clip(st.session_state.get("stress_viewer_x_mm", default_x), 0, L_mm_int))
-    M_at = float(np.interp(x_preview, d.x_mm, M))
+    M_at_disp = float(np.interp(x_preview, d.x_mm, M_display))
+    M_at_an = float(np.interp(x_preview, d.x_mm, M_analysis))
+    sag = "sagging" if M_at_an >= 0 else "hogging"
     fig_m.add_vline(x=x_preview / 1000.0, line=dict(color="#e09f3e", width=2, dash="dot"))
     fig_m.add_trace(
         go.Scatter(
             x=[x_preview / 1000.0],
-            y=[M_at],
+            y=[M_at_disp],
             mode="markers",
             marker=dict(size=12, color="#e09f3e", symbol="diamond"),
             name="station",
             customdata=[[float(x_preview)]],
-            hovertemplate=f"x={x_preview:.0f} mm<br>M={M_at:.1f} kN·m<extra>station</extra>",
+            hovertemplate=(
+                f"x={x_preview:.0f} mm<br>"
+                f"M_display={M_at_disp:.1f} kN·m<br>"
+                f"M_analysis={M_at_an:+.1f} kN·m ({sag})"
+                "<extra>station</extra>"
+            ),
         )
     )
     return fig_m
@@ -312,6 +334,10 @@ def render_results_dashboard(
                 on_select="rerun",
                 selection_mode="points",
             )
+            st.caption(
+                "BMD drawn on the tension face: sagging below baseline, hogging above "
+                "(display M = −M_analysis; analysis +sagging / −hogging)."
+            )
             x_from_sel = _x_mm_from_plotly_selection(event, L_mm_int)
             if x_from_sel is not None:
                 st.session_state.stress_viewer_x_mm = x_from_sel
@@ -350,8 +376,21 @@ def render_results_dashboard(
         help="Capacity-shape plastic stress blocks at PNA; annotated with M/Mn at this station.",
     )
     if result.diagram is not None and getattr(result, "shape", None) is not None:
+        # Fixed stress-axis scale from span peak |σ| (cached once per dashboard render)
+        cache_key = "peak_sigma_MPa"
+        result_id = id(result)
+        if (
+            st.session_state.get("_peak_sigma_result_id") != result_id
+            or cache_key not in st.session_state
+        ):
+            st.session_state[cache_key] = peak_elastic_stress_MPa(result)
+            st.session_state["_peak_sigma_result_id"] = result_id
+        sigma_max = float(st.session_state[cache_key])
         fig_xs = cross_section_stress_figure(
-            result, float(x_mm), show_plastic_blocks=show_plastic
+            result,
+            float(x_mm),
+            show_plastic_blocks=show_plastic,
+            sigma_axis_MPa=sigma_max,
         )
         st.plotly_chart(fig_xs, use_container_width=True, key="cross_section_stress")
     else:
