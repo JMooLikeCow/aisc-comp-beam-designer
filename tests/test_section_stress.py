@@ -140,3 +140,38 @@ def test_peak_elastic_stress_positive(ss_positive_result):
     lo, hi = float(xaxis.range[0]), float(xaxis.range[1])
     assert hi == pytest.approx(peak * 1.05, rel=1e-6)
     assert lo == pytest.approx(-peak * 1.05, rel=1e-6)
+
+
+def test_cumulative_display_follows_bmd_tension_face(ss_positive_result):
+    """Sagging cumulative F / ΣQn must plot below baseline (same sense as BMD)."""
+    import numpy as np
+
+    from composite_beam.reporting.charts import cumulative_action_figure, force_display_sign
+
+    assert float(force_display_sign(100.0)[0]) == -1.0
+    assert float(force_display_sign(-50.0)[0]) == 1.0
+
+    res = ss_positive_result
+    assert res.cumulative is not None
+    fig = cumulative_action_figure(res)
+    assert fig is not None
+    # Trace 0 = F_req, trace 1 = ΣQn provided
+    y_req = np.asarray(fig.data[0].y, dtype=float)
+    y_prov = np.asarray(fig.data[1].y, dtype=float)
+    M_an = np.interp(
+        res.cumulative.x_mm,
+        res.diagram.x_mm,
+        res.diagram.M_kNmm / 1000.0,
+    )
+    i_mid = int(np.argmax(M_an))
+    assert M_an[i_mid] > 0
+    assert y_req[i_mid] < 0
+    assert y_prov[i_mid] < 0
+    # Magnitudes preserved
+    assert abs(y_req[i_mid]) == pytest.approx(float(res.cumulative.F_req_kN[i_mid]), rel=1e-9)
+    assert abs(y_prov[i_mid]) == pytest.approx(
+        float(res.cumulative.SumQn_prov_kN[i_mid]), rel=1e-9
+    )
+    # Axis / title mention tension face
+    title = fig.layout.title.text if fig.layout.title else ""
+    assert "tension face" in title.lower()

@@ -237,6 +237,21 @@ def _moment_chart_for_selection(result: "DesignResult", fig_m, default_x: int, L
             ),
         )
     )
+    # Legend above chart so station marker / vline never overlaps it
+    fig_m.update_layout(
+        margin=dict(l=70, r=140, t=70, b=60),
+        legend=dict(
+            orientation="v",
+            yanchor="top",
+            y=1.0,
+            x=1.02,
+            xanchor="left",
+            xref="paper",
+            yref="paper",
+            bgcolor="rgba(255,255,255,0.92)",
+        ),
+        showlegend=True,
+    )
     return fig_m
 
 
@@ -414,7 +429,9 @@ def render_results_dashboard(
             f"right = {cum.origin_right_mm/1000:.2f} m "
             f"(supports or contraflexure). F_req uses moment-proportional "
             f"C·M(x)/M_max toward max +M (AISC I3.2d / I8 detailing). "
-            f"α = ΣQn/C_full. Not a substitute for the discrete half-span stud count."
+            f"Force curves drawn on the tension face (same sense as BMD: "
+            f"sagging below baseline). α = ΣQn/C_full. "
+            f"Not a substitute for the discrete half-span stud count."
         )
     else:
         st.caption("Cumulative composite-action plot unavailable (no governing diagram).")

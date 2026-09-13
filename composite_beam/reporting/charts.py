@@ -13,6 +13,43 @@ def _go():
     return go
 
 
+# Shared layout polish: keep titles / legends clear of filled data regions.
+_MARGIN = dict(l=70, r=40, t=72, b=64)
+_LEGEND_ABOVE = dict(
+    orientation="h",
+    yanchor="bottom",
+    y=1.02,
+    x=0.0,
+    xref="paper",
+    yref="paper",
+    bgcolor="rgba(255,255,255,0.92)",
+)
+_LEGEND_RIGHT = dict(
+    orientation="v",
+    yanchor="top",
+    y=1.0,
+    x=1.02,
+    xanchor="left",
+    xref="paper",
+    yref="paper",
+    bgcolor="rgba(255,255,255,0.92)",
+)
+_LEGEND_BELOW = dict(
+    orientation="h",
+    yanchor="top",
+    y=-0.22,
+    x=0,
+    xref="paper",
+    yref="paper",
+    bgcolor="rgba(255,255,255,0.92)",
+)
+_TITLE_STANDOFF = 14
+
+
+def _axis_title(text: str) -> dict:
+    return dict(text=text, standoff=_TITLE_STANDOFF)
+
+
 def moment_display_kNm(M_analysis_kNm):
     """
     Structural convention: draw the BMD on the tension face.
@@ -24,6 +61,22 @@ def moment_display_kNm(M_analysis_kNm):
     import numpy as np
 
     return -np.asarray(M_analysis_kNm, dtype=float)
+
+
+def force_display_sign(M_analysis_kNm):
+    """
+    Display sign for cumulative force so the envelope matches BMD sense.
+
+    +M (sagging) → −1 (draw below baseline); −M (hogging) → +1 (above).
+    At M≈0 default to sagging sense (−1). Always returns a 1-D float array.
+    """
+    import numpy as np
+
+    M = np.atleast_1d(np.asarray(M_analysis_kNm, dtype=float))
+    sign = np.ones(M.shape, dtype=float)
+    sign[M >= 0] = -1.0  # sagging / zero → below (tension face)
+    sign[M < 0] = 1.0  # hogging → above
+    return sign
 
 
 def moment_shear_figures(result: "DesignResult") -> list:
@@ -63,12 +116,21 @@ def moment_shear_figures(result: "DesignResult") -> list:
                 )
             ],
             layout=go.Layout(
-                title="Bending moment (governing occupancy combo) — drawn on tension face",
-                xaxis_title="x (m) [ft]",
-                yaxis_title="M (kN·m) [kip·ft] — drawn on tension face (sagging ↓)",
+                title=dict(
+                    text="Bending moment (governing occupancy combo) — drawn on tension face",
+                    y=0.98,
+                ),
+                xaxis=dict(title=_axis_title("x (m) [ft]")),
+                yaxis=dict(
+                    title=_axis_title(
+                        "M (kN·m) [kip·ft] — drawn on tension face (sagging ↓)"
+                    )
+                ),
                 template="plotly_white",
-                height=320,
-                margin=dict(l=50, r=20, t=40, b=40),
+                height=360,
+                margin=dict(l=70, r=150, t=90, b=60),
+                legend=_LEGEND_RIGHT,
+                showlegend=True,
             ),
         )
     )
@@ -85,12 +147,14 @@ def moment_shear_figures(result: "DesignResult") -> list:
                 )
             ],
             layout=go.Layout(
-                title="Shear (governing occupancy combo)",
-                xaxis_title="x (m)",
-                yaxis_title="V (kN) [kip]",
+                title=dict(text="Shear (governing occupancy combo)", y=0.98),
+                xaxis=dict(title=_axis_title("x (m)")),
+                yaxis=dict(title=_axis_title("V (kN) [kip]")),
                 template="plotly_white",
-                height=320,
-                margin=dict(l=50, r=20, t=40, b=40),
+                height=360,
+                margin=dict(l=70, r=150, t=90, b=60),
+                legend=_LEGEND_RIGHT,
+                showlegend=True,
             ),
         )
     )
@@ -126,14 +190,16 @@ def interaction_figure(result: "DesignResult"):
         )
     )
     fig.update_layout(
-        title=f"Chapter H interaction ({inter.equation}, DCR={inter.DCR:.3f})",
-        xaxis_title="Pr / Pc",
-        yaxis_title="Mr / Mc  (x + y)",
+        title=dict(
+            text=f"Chapter H interaction ({inter.equation}, DCR={inter.DCR:.3f})",
+            y=0.98,
+        ),
+        xaxis=dict(title=_axis_title("Pr / Pc"), range=[0, 1.05]),
+        yaxis=dict(title=_axis_title("Mr / Mc  (x + y)"), range=[0, 1.15]),
         template="plotly_white",
-        height=340,
-        xaxis=dict(range=[0, 1.05]),
-        yaxis=dict(range=[0, 1.15]),
-        margin=dict(l=50, r=20, t=40, b=40),
+        height=360,
+        margin=dict(l=64, r=150, t=72, b=56),
+                legend=_LEGEND_RIGHT,
     )
     return fig
 
@@ -177,51 +243,104 @@ def stud_layout_figure(result: "DesignResult"):
             )
         )
     fig.update_layout(
-        title=f"Stud layout ({layout.n_total} studs)",
-        xaxis_title="x (m)",
-        yaxis_title="row  /  scaled M (kN·m) [kip·ft]",
+        title=dict(text=f"Stud layout ({layout.n_total} studs)", y=0.98),
+        xaxis=dict(title=_axis_title("x (m)")),
+        yaxis=dict(title=_axis_title("row  /  scaled M (kN·m) [kip·ft]")),
         template="plotly_white",
-        height=320,
-        margin=dict(l=50, r=20, t=40, b=40),
+        height=360,
+        margin=dict(l=64, r=150, t=72, b=56),
+                legend=_LEGEND_RIGHT,
     )
     return fig
 
 
 def cumulative_action_figure(result: "DesignResult"):
-    """Provided ΣQn vs required cumulative force along the span (dual-unit axes)."""
+    """
+    Provided ΣQn vs required cumulative force along the span (dual-unit axes).
+
+    Vertical sense matches the BMD: forces are drawn on the tension face
+    (sagging → below baseline via display = −F; hogging → above).
+    Hover reports unsigned magnitudes and analysis meaning.
+    """
+    import numpy as np
+
     go = _go()
     cum = getattr(result, "cumulative", None)
     if cum is None or len(cum.x_mm) == 0:
         return None
 
     x_m = cum.x_mm / 1000.0
+    F_mag = np.asarray(cum.F_req_kN, dtype=float)
+    Sq_mag = np.asarray(cum.SumQn_prov_kN, dtype=float)
+
+    # Local moment at cumulative stations → tension-face display sign
+    if result.diagram is not None:
+        M_an = np.interp(
+            cum.x_mm,
+            result.diagram.x_mm,
+            result.diagram.M_kNmm / 1000.0,
+        )
+    else:
+        M_an = np.maximum(F_mag, 0.0)  # fallback: treat as sagging where force exists
+    sign = force_display_sign(M_an)
+    F_disp = sign * F_mag
+    Sq_disp = sign * Sq_mag
+
+    # C_full reference on the side of max +M (sagging → below)
+    M_at_max = float(np.interp(cum.x_maxM_mm, cum.x_mm, M_an)) if len(M_an) else 1.0
+    c_sign = float(force_display_sign([M_at_max])[0])
+    C_disp = c_sign * float(cum.C_full_kN)
+
+    hover_req = [
+        (
+            f"|F_req|={abs(fm):.1f} kN<br>"
+            f"F_display={fd:.1f} kN<br>"
+            f"M_analysis={ma:+.1f} kN·m "
+            f"({'sagging' if ma >= 0 else 'hogging'})"
+        )
+        for fm, fd, ma in zip(F_mag, F_disp, M_an)
+    ]
+    hover_prov = [
+        (
+            f"|ΣQn|={abs(sm):.1f} kN<br>"
+            f"ΣQn_display={sd:.1f} kN<br>"
+            f"M_analysis={ma:+.1f} kN·m "
+            f"({'sagging' if ma >= 0 else 'hogging'})"
+        )
+        for sm, sd, ma in zip(Sq_mag, Sq_disp, M_an)
+    ]
+
     fig = go.Figure()
     fig.add_trace(
         go.Scatter(
             x=x_m,
-            y=cum.F_req_kN,
+            y=F_disp,
             mode="lines",
             name="F_req (moment-prop.)",
             line=dict(color="#c0392b", width=2, dash="dash"),
+            text=hover_req,
+            hovertemplate="x=%{x:.3f} m<br>%{text}<extra>F_req</extra>",
         )
     )
     fig.add_trace(
         go.Scatter(
             x=x_m,
-            y=cum.SumQn_prov_kN,
+            y=Sq_disp,
             mode="lines",
             name="ΣQn provided",
             line=dict(color="#1f4e79", width=2.5),
             fill="tozeroy",
             fillcolor="rgba(31,78,121,0.12)",
+            text=hover_prov,
+            hovertemplate="x=%{x:.3f} m<br>%{text}<extra>ΣQn</extra>",
         )
     )
-    # C_full reference
+    # C_full reference (same vertical sense as max +M)
     fig.add_hline(
-        y=cum.C_full_kN,
+        y=C_disp,
         line=dict(color="#888", width=1, dash="dot"),
-        annotation_text=f"C_full = {cum.C_full_kN:.0f} kN",
-        annotation_position="top left",
+        annotation_text=f"|C_full| = {cum.C_full_kN:.0f} kN",
+        annotation_position="bottom left" if C_disp < 0 else "top left",
     )
     # Mark max-M
     fig.add_vline(
@@ -232,34 +351,39 @@ def cumulative_action_figure(result: "DesignResult"):
     )
 
     fig.update_layout(
-        title=(
-            "Cumulative composite action — ΣQn provided vs F_req along span "
-            "(AISC I3.2d / I8 detailing)"
+        title=dict(
+            text=(
+                "Cumulative composite action — ΣQn provided vs F_req "
+                "(drawn on tension face, same sense as BMD)"
+            ),
+            y=0.98,
         ),
-        xaxis_title="x (m) [ft]",
-        yaxis_title="Force (kN) [kip]",
+        xaxis=dict(title=_axis_title("x (m) [ft]")),
+        yaxis=dict(
+            title=_axis_title(
+                "Force (kN) [kip] — drawn on tension face (sagging ↓)"
+            )
+        ),
         template="plotly_white",
-        height=380,
-        margin=dict(l=50, r=20, t=50, b=70),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0),
+        height=440,
+        margin=dict(l=70, r=150, t=100, b=96),
+                legend=_LEGEND_RIGHT,
     )
     fig.add_annotation(
         text=(
             f"Origins: left={cum.origin_left_mm/1000:.2f} m, "
             f"right={cum.origin_right_mm/1000:.2f} m · "
             "F_req = C·M(x)/M_max from nearer origin · "
+            "display sign follows local M (sagging below) · "
             "not a substitute for half-span stud count"
         ),
         xref="paper",
         yref="paper",
         x=0.0,
-        y=-0.22,
+        y=-0.28,
         showarrow=False,
         font=dict(size=11, color="#555"),
         align="left",
-    )
-    fig.update_traces(
-        hovertemplate="x=%{x:.3f} m<br>F=%{y:.1f} kN<extra>%{fullData.name}</extra>"
     )
     return fig
 
@@ -327,7 +451,8 @@ def cross_section_stress_figure(
         cols=n_cols,
         shared_yaxes=True,
         subplot_titles=titles,
-        horizontal_spacing=0.08,
+        horizontal_spacing=0.10,
+        vertical_spacing=0.12,
         column_widths=[0.34, 0.33, 0.33][:n_cols],
     )
 
@@ -544,7 +669,7 @@ def cross_section_stress_figure(
 
     # Axis: y from top, increasing downward
     fig.update_yaxes(
-        title_text="y from top (mm) [in]",
+        title=_axis_title("y from top (mm) [in]"),
         range=[total_h * 1.02, -total_h * 0.02],
         row=1,
         col=1,
@@ -552,11 +677,11 @@ def cross_section_stress_figure(
     fig.update_yaxes(range=[total_h * 1.02, -total_h * 0.02], row=1, col=2)
     if show_plastic_blocks:
         fig.update_yaxes(range=[total_h * 1.02, -total_h * 0.02], row=1, col=3)
-        fig.update_xaxes(title_text="σ (MPa) [ksi]", row=1, col=3, zeroline=True)
+        fig.update_xaxes(title=_axis_title("σ (MPa) [ksi]"), row=1, col=3, zeroline=True)
 
-    fig.update_xaxes(title_text="Width (mm) [in]", row=1, col=1, zeroline=True)
+    fig.update_xaxes(title=_axis_title("Width (mm) [in]"), row=1, col=1, zeroline=True)
     fig.update_xaxes(
-        title_text="σ (MPa) [ksi]  −comp / +tens",
+        title=_axis_title("σ (MPa) [ksi]  −comp / +tens"),
         row=1,
         col=2,
         zeroline=True,
@@ -565,32 +690,39 @@ def cross_section_stress_figure(
     if show_plastic_blocks:
         fig.update_xaxes(range=[-sigma_lim, sigma_lim], row=1, col=3)
 
-    # Annotate fixed σ_max used for the axis scale
-    fig.add_annotation(
-        text=f"σ_max = {float(sigma_axis_MPa):.2f} MPa (span peak, fixed scale)",
-        xref="x2 domain",
-        yref="y2 domain",
-        x=0.5,
-        y=-0.14,
-        showarrow=False,
-        font=dict(size=11, color="#555"),
-    )
-
     hog_note = " · HOGGING (steel-only)" if prof.hogging else ""
     beff_note = (
         f"beff={prof.beff_mm:.0f} mm"
         + (f" (plot {prof.beff_plot_mm:.0f} mm)" if abs(prof.beff_mm - prof.beff_plot_mm) > 1 else "")
     )
+    sigma_note = f"σ_max={float(sigma_axis_MPa):.2f} MPa (span peak, fixed scale)"
+    # Horizontal legend BELOW all subplots (clear of titles + axis labels).
     fig.update_layout(
-        title=(
-            f"Cross-section stress at x={prof.x_mm:.0f} mm "
-            f"({prof.x_mm/1000:.3f} m) · M(x)={prof.M_kNm:.1f} kN·m{hog_note}<br>"
-            f"<sup>{beff_note} · NA={prof.y_NA_from_top_mm:.1f} mm from top · "
-            f"I_tr={prof.I_tr_mm4:.3e} mm⁴</sup>"
+        title=dict(
+            text=(
+                f"Cross-section stress at x={prof.x_mm:.0f} mm "
+                f"({prof.x_mm/1000:.3f} m) · M(x)={prof.M_kNm:.1f} kN·m{hog_note}<br>"
+                f"<sup>{beff_note} · NA={prof.y_NA_from_top_mm:.1f} mm from top · "
+                f"I_tr={prof.I_tr_mm4:.3e} mm⁴ · {sigma_note}</sup>"
+            ),
+            y=0.99,
+            pad=dict(t=4, b=10),
         ),
         template="plotly_white",
-        height=480,
-        margin=dict(l=50, r=30, t=80, b=70),
-        legend=dict(orientation="h", yanchor="bottom", y=-0.18, x=0),
+        height=580,
+        margin=dict(l=70, r=40, t=110, b=120),
+        legend=dict(
+            orientation="h",
+            y=-0.28,
+            x=0,
+            xref="paper",
+            yref="paper",
+            yanchor="top",
+            bgcolor="rgba(255,255,255,0.92)",
+        ),
     )
+    # Give subplot titles a little air under the main title
+    for ann in fig.layout.annotations or []:
+        if getattr(ann, "text", None) in titles:
+            ann.update(yshift=12)
     return fig
